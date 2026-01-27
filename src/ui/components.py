@@ -23,15 +23,32 @@ def render_stock_search(on_search: Callable[[str], None], stock_list: Optional[L
 
 def render_user_profile() -> Dict[str, Any]:
     """Render user profile input."""
-    st.subheader("Your Investment Profile")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        expected_return = st.slider("Expected CAGR %", 5, 30, 15, help="Annual return expectation")
-    with col2:
-        risk = st.selectbox("Risk Appetite", ["Low", "Medium", "High"], index=1)
-    with col3:
-        tenure = st.slider("Holding Period (Years)", 1, 10, 5)
-    return {'expected_return': expected_return, 'risk_appetite': risk.lower(), 'holding_tenure': tenure}
+    st.subheader("📋 Your Investment Profile")
+    
+    expected_return = st.slider(
+        "Expected CAGR %", 
+        min_value=5, max_value=35, value=15, 
+        help="Your expected annual return"
+    )
+    
+    risk = st.selectbox(
+        "Risk Appetite", 
+        ["Low", "Medium", "High"], 
+        index=1,
+        help="Low: Stable blue chips, Medium: Quality growth, High: Aggressive growth"
+    )
+    
+    tenure = st.slider(
+        "Holding Period (Years)", 
+        min_value=1, max_value=15, value=5,
+        help="How long you plan to hold"
+    )
+    
+    return {
+        'expected_return': expected_return, 
+        'risk_appetite': risk.lower(), 
+        'holding_tenure': tenure
+    }
 
 
 def render_signal_badge(signal: str, score: float):

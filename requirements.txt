@@ -4,11 +4,14 @@
 # Web Framework
 streamlit>=1.28.0
 
-# Data Sources (yfinance as primary, nsetools as secondary)
-# Note: jugaad-data removed due to beautifulsoup4 version conflict with yfinance
-# If you need jugaad-data, install it separately: pip install jugaad-data --no-deps
+# Data Sources
 yfinance>=0.2.31
 nsetools>=1.0.11
+
+# Optional: Jugaad Data for additional NSE historical data
+# Install separately after main requirements to avoid conflicts:
+# pip install jugaad-data --no-deps
+# jugaad-data>=0.24  # Commented due to beautifulsoup4 conflict
 
 # Data Processing
 pandas>=2.0.0

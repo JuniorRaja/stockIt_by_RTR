@@ -17,52 +17,65 @@ This tool provides **decision support, not decisions**. It:
 
 ## Quick Start
 
-### Option 1: Docker (Recommended)
+### Step 1: Download All Stock Data (Run Once)
+
+This tool is designed to work **100% offline**. First, download all Indian stock market data:
 
 ```bash
 # Clone the repository
 git clone https://github.com/your-repo/indian-equity-intelligence.git
 cd indian-equity-intelligence
 
-# Build and run with Docker Compose
-docker-compose up --build
-
-# Or run setup first to download initial data (optional)
-docker-compose --profile setup run setup
-docker-compose up
-```
-
-Open http://localhost:8501 in your browser.
-
-### Option 2: Virtual Environment
-
-```bash
-# Clone the repository
-git clone https://github.com/your-repo/indian-equity-intelligence.git
-cd indian-equity-intelligence
-
-# Create a virtual environment
+# Create virtual environment
 python -m venv venv
-
-# Activate the virtual environment
-# On macOS/Linux:
-source venv/bin/activate
-# On Windows:
-# venv\Scripts\activate
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Run setup (downloads initial data)
-python setup.py
+# Download ALL stock data (takes 2-4 hours for 2000+ stocks)
+python download_all_data.py
 
-# Start the application
+# Or download specific stocks quickly
+python download_all_data.py --symbols TCS,RELIANCE,INFY,HDFCBANK
+
+# Resume if interrupted
+python download_all_data.py --resume
+```
+
+### Step 2: Run the Application
+
+**Option A: Docker (Recommended for offline use)**
+```bash
+docker-compose up --build
+```
+
+**Option B: Run directly**
+```bash
 streamlit run app.py
 ```
 
 Open http://localhost:8501 in your browser.
 
-> **Note**: Docker or virtual environment is strongly recommended. It isolates this project's dependencies, preventing any conflicts with other installed packages.
+### Offline Operation
+
+After downloading data once, the app works **completely offline**:
+- All price history stored in `data/prices/` (Parquet files)
+- Stock info stored in `data/stock_info/` (JSON files)
+- Database in `data/db/` (DuckDB)
+
+No internet connection needed during analysis!
+
+### Updating Data
+
+To refresh data periodically:
+```bash
+# Update all stocks
+python download_all_data.py --resume
+
+# Update specific stocks
+python download_all_data.py --symbols TCS,RELIANCE
+```
 
 ## Features
 
