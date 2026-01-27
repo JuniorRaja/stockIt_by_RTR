@@ -1,183 +1,233 @@
 # Indian Equity Intelligence
 
-A **free**, **open-source**, **local-first** application for analyzing Indian equities deeply and rationally.
+A **free**, **open-source**, **local-first** application for analyzing Indian equities with ML-powered insights.
 
 > *"Is this stock suitable for this investor, under these assumptions — and what could invalidate the thesis?"*
 
-## Philosophy
+## Quick Start (4 Steps)
 
-This tool provides **decision support, not decisions**. It:
-
-- Rewards patience
-- Penalizes weak governance
-- Resists narrative bias
-- Stays explainable at every step
-
-**No price predictions. No trading signals. Just rational analysis.**
-
-## Quick Start
-
-### Option 1: Docker (Recommended)
+### 1. Clone the Repository
 
 ```bash
-# Clone the repository
 git clone https://github.com/your-repo/indian-equity-intelligence.git
 cd indian-equity-intelligence
-
-# Build and run with Docker Compose
-docker-compose up --build
-
-# Or run setup first to download initial data (optional)
-docker-compose --profile setup run setup
-docker-compose up
 ```
 
-Open http://localhost:8501 in your browser.
+### 2. Download ML Models
 
-### Option 2: Virtual Environment
+Run the interactive model downloader to choose models based on your PC specs:
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-repo/indian-equity-intelligence.git
-cd indian-equity-intelligence
+python download_models.py
+```
 
-# Create a virtual environment
+**Choose a preset based on your hardware:**
+
+| Preset | RAM Required | What You Get |
+|--------|--------------|--------------|
+| 🚀 **Full** | 16GB+ | Chronos-T5-Base + LightGBM + Qwen2.5-3B |
+| 💻 **Standard** | 8-16GB | Chronos-T5-Small + LightGBM + Qwen2.5-3B |
+| 🪶 **Lite** | 4-8GB | Chronos-T5-Tiny + LightGBM (no LLM) |
+
+### 3. Install Requirements
+
+```bash
+# Create virtual environment (recommended)
 python -m venv venv
-
-# Activate the virtual environment
-# On macOS/Linux:
-source venv/bin/activate
-# On Windows:
-# venv\Scripts\activate
+source venv/bin/activate  # Windows: venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
+```
 
-# Run setup (downloads initial data)
-python setup.py
+### 4. Run the Application
 
-# Start the application
+```bash
 streamlit run app.py
 ```
 
-Open http://localhost:8501 in your browser.
+Open http://localhost:8501 — **ML models initialize automatically!**
 
-> **Note**: Docker or virtual environment is strongly recommended. It isolates this project's dependencies, preventing any conflicts with other installed packages.
+---
+
+## What This Tool Does
+
+### ML-Enhanced Stock Analysis
+
+| Layer | Model | What It Does |
+|-------|-------|--------------|
+| **Forecaster** | Chronos-T5 | Predicts price trends for next 30 days |
+| **Classifier** | LightGBM | Generates BUY/HOLD/AVOID/SELL signals |
+| **Explainer** | Qwen2.5-3B | Writes natural language analysis |
+
+All models run **100% locally** on your machine. No cloud APIs, no data sent anywhere.
+
+### Analysis Dimensions
+
+- **Governance**: Promoter holding, pledge ratio, auditor stability
+- **Financial**: Revenue growth, ROCE, cash flows, margins
+- **Valuation**: PE/PB vs history, PEG ratio
+- **Market Behaviour**: Drawdowns, volatility, recovery patterns
+- **ML Insights**: Price forecasts, AI-generated explanations
+
+### Signals
+
+Based on YOUR investment profile:
+- **BUY**: Strong match with your criteria
+- **HOLD**: Mixed signals, monitor
+- **AVOID**: Doesn't fit your profile
+- **SELL**: Significant concerns detected
+
+---
+
+## Hardware Requirements
+
+| Setup | RAM | GPU | Models |
+|-------|-----|-----|--------|
+| **Minimum** | 8GB | None | Chronos-Tiny + LightGBM |
+| **Recommended** | 16GB | Optional | Chronos-Base + LightGBM + Qwen2.5-3B |
+| **Ideal** | 16GB+ | 8GB VRAM | All models with GPU acceleration |
+
+---
+
+## Alternative Setup Methods
+
+### Docker
+
+```bash
+docker-compose up --build
+```
+
+### Manual Model Download
+
+If the automatic downloader doesn't work:
+
+```bash
+# Create directories
+mkdir -p models/{forecaster,classifier,explainer}
+
+# Forecaster (choose one)
+huggingface-cli download amazon/chronos-t5-base --local-dir models/forecaster/chronos-t5-base
+
+# Explainer (optional)
+mkdir -p models/explainer/qwen2.5-3b
+wget https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf \
+  -O models/explainer/qwen2.5-3b/model.gguf
+```
+
+See [ML_MODELS.md](ML_MODELS.md) for detailed instructions.
+
+---
+
+## Configuration
+
+Edit `config/settings.yaml` to customize:
+
+```yaml
+ml_config:
+  enabled: true
+  auto_initialize: true  # Models load on startup
+  
+  forecaster:
+    model: "chronos-t5-base"  # or chronos-t5-small, chronos-t5-tiny
+  
+  classifier:
+    model: "lightgbm"  # or catboost
+  
+  explainer:
+    model: "qwen2.5-3b"  # or qwen2.5-7b, null to disable
+```
+
+---
 
 ## Features
 
-### Core Analysis
-- **Individual Stock Analysis**: Comprehensive analysis of any NSE-listed company
-- **User Profile Matching**: Signals customized to YOUR expected return, risk appetite, and tenure
-- **Five Analysis Dimensions**:
-  - Legacy & Governance (promoter holding, pledges, auditor stability)
-  - Financial Trajectory (growth, ROCE, cash flows, margins)
-  - Valuation Context (PE/PB vs history and sector, PEG)
-  - Market Behaviour (drawdowns, recovery, volatility)
-  - ML-Assisted Context (company archetype classification)
+### Core Features
+- **Individual Stock Analysis**: Analyze any NSE-listed company
+- **User Profile Matching**: Signals personalized to YOUR goals
+- **Mandatory "Why NOT" Panel**: Shown even for BUY signals
+- **Red Flag Detection**: Automatic governance/financial warnings
 
-### Signals
-Contextual signals based on your profile:
-- **BUY**: Stock aligns well with your investment profile
-- **HOLD**: Mixed characteristics, monitor if already holding
-- **AVOID BUYING**: Does not match your profile
-- **SELL / EXIT**: Significant deterioration detected
-
-### Mandatory Explainability
-Every analysis includes:
-- Clear reasoning for the signal
-- **"Why This is NOT a Buy For You"** panel (shown even for BUY signals)
-- Risk factors and thesis invalidators
+### ML Features
+- **Price Predictions**: 5-day and 30-day trend forecasts
+- **Signal Probabilities**: Confidence levels for each signal
+- **AI Explanations**: Natural language analysis summaries
+- **Trend Detection**: Bullish/Bearish/Neutral classification
 
 ### Advanced Features
-- **Red Flag Alert System**: Automatic detection of governance and financial red flags
-- **Time Travel Mode**: Re-analyze with only historical data (no future leakage)
-- **Scenario Simulator**: Stress-test your thesis under various scenarios
+- **Time Travel Mode**: Re-analyze with historical data only
+- **Scenario Simulator**: Stress-test your investment thesis
+- **Stock Suggestions**: Quick picks by category
+
+---
 
 ## Project Structure
 
 ```
 indian-equity-intelligence/
-├── app.py                    # Main Streamlit application
-├── setup.py                  # First-run setup script
+├── app.py                    # Main application
+├── download_models.py        # Interactive model downloader
 ├── requirements.txt          # Python dependencies
-├── config/
-│   └── settings.yaml         # Configuration and thresholds
-├── data/
-│   ├── cache/                # Parquet cache files
-│   └── db/                   # DuckDB database
-├── src/
-│   ├── data/                 # Data layer
-│   │   ├── sources.py        # Multi-source data ingestion
-│   │   ├── database.py       # DuckDB manager
-│   │   └── cache.py          # Cache manager
-│   ├── engine/               # Analysis engines
-│   │   ├── governance.py     # Governance analysis
-│   │   ├── financial.py      # Financial analysis
-│   │   ├── valuation.py      # Valuation analysis
-│   │   ├── market.py         # Market behaviour analysis
-│   │   └── ml_context.py     # ML-assisted context
-│   ├── analysis/             # Signal and explainability
-│   │   ├── signal_generator.py
-│   │   ├── explainability.py
-│   │   └── red_flags.py
-│   ├── features/             # Advanced features
-│   │   ├── time_travel.py
-│   │   └── scenario_simulator.py
-│   └── ui/                   # Streamlit components
-│       ├── components.py
-│       └── charts.py
-└── tests/                    # Unit tests
+├── config/settings.yaml      # Configuration
+├── models/                   # ML models (download via script)
+│   ├── forecaster/
+│   ├── classifier/
+│   └── explainer/
+├── data/                     # Stock data (auto-downloaded)
+└── src/                      # Source code
 ```
 
-## Data Sources
+---
 
-- Yahoo Finance (via yfinance)
-- NSE Tools (nsetools)
+## Troubleshooting
 
-Note: `jugaad-data` was removed due to dependency conflicts with yfinance. If needed, install separately with `pip install jugaad-data --no-deps`.
+### "Models not loading"
+```bash
+# Re-run the model downloader
+python download_models.py
+```
 
-## Local-First Guarantee
+### "llama-cpp-python build fails"
+```bash
+# Install with pre-built wheel
+pip install llama-cpp-python --prefer-binary
 
-- **100% offline operation** after initial setup
-- **No telemetry** or tracking
-- **No external API calls** during analysis
-- All data stored locally
+# Or for Apple Silicon
+CMAKE_ARGS="-DLLAMA_METAL=on" pip install llama-cpp-python
+```
 
-## Configuration
+### "Out of memory"
+Choose a lighter preset in `download_models.py` or disable the LLM explainer in settings.yaml:
+```yaml
+explainer:
+  model: null  # Uses rule-based explanations instead
+```
 
-Edit `config/settings.yaml` to customize:
-- Analysis thresholds
-- Risk profile parameters
-- Signal generation weights
-- Red flag detection rules
+---
 
-## Limitations
+## Privacy & Security
 
-- Data depends on free sources (may have delays)
-- Shareholding pattern requires additional sources
-- ML model requires data for training
+- **100% Local Processing**: No data leaves your machine
+- **No Telemetry**: No tracking or analytics
+- **Offline Capable**: Works without internet after setup
+- **Open Source**: Full code transparency
 
-## Non-Goals
+---
 
-This tool does NOT:
-- Provide intraday or short-term signals
-- Predict prices
-- Execute trades
-- Claim to be investment advice
+## Disclaimer
+
+**This tool is for educational purposes only.**
+
+- Not investment advice
+- Past performance ≠ future results
+- Always do your own research
+- Consult a qualified financial advisor
+
+---
 
 ## License
 
 MIT License - see LICENSE file.
-
-## Disclaimer
-
-**This tool is for educational and informational purposes only.**
-
-- It does NOT constitute investment advice
-- Past performance does not guarantee future results
-- Always do your own research
-- Consult a qualified financial advisor
 
 ---
 

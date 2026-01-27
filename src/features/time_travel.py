@@ -33,11 +33,12 @@ class TimeTravelResult:
 class TimeTravelEngine:
     """Time Travel: Re-analyze with historical data only. No future leakage."""
     
-    AVAILABLE_CUTOFFS = [2010, 2015, 2018, 2020, 2022]
+    # Default cutoffs - but will dynamically generate based on stock data
+    DEFAULT_CUTOFFS = [2000, 2005, 2008, 2010, 2013, 2015, 2018, 2020, 2022, 2024]
     
     def __init__(self, db_manager=None):
         self.db = db_manager
-        self.min_year = get_config('time_travel.min_year', 2005)
+        self.min_year = get_config('time_travel.min_year', 1996)  # Support older data
         self.governance = GovernanceAnalyzer(db_manager)
         self.financial = FinancialAnalyzer(db_manager)
         self.valuation = ValuationAnalyzer(db_manager)
@@ -157,9 +158,51 @@ class TimeTravelEngine:
         return f"Signal: {sig}. 3Y return: {three_y:.1f}%"
     
     def get_available_cutoffs(self, prices: pd.DataFrame) -> List[int]:
+        """
+        Generate available cutoff years based on the stock's actual data range.
+        Shows cutoffs from the stock's starting year, spaced appropriately.
+        """
         if prices.empty:
             return []
+        
         df = prices.copy()
         df['date'] = pd.to_datetime(df['date'])
-        min_y, max_y = df['date'].min().year, df['date'].max().year
-        return [y for y in self.AVAILABLE_CUTOFFS if min_y <= y < max_y]
+        min_year = df['date'].min().year
+        max_year = df['date'].max().year
+        current_year = datetime.now().year
+        
+        # Need at least 2 years of post-cutoff data for meaningful analysis
+        latest_cutoff = min(max_year - 2, current_year - 1)
+        
+        # Generate cutoffs dynamically based on data range
+        cutoffs = []
+        
+        # Start from stock's first year (rounded to nearest significant year)
+        # Add the actual starting year if it has enough history
+        if min_year <= latest_cutoff:
+            # Add starting year + 1 (need some data before cutoff too)
+            first_cutoff = min_year + 1
+            if first_cutoff <= latest_cutoff:
+                cutoffs.append(first_cutoff)
+        
+        # Add years from default list that fall within range
+        for year in self.DEFAULT_CUTOFFS:
+            if min_year < year <= latest_cutoff and year not in cutoffs:
+                cutoffs.append(year)
+        
+        # Ensure we have some spacing - add intermediate years if range is large
+        if min_year < 2005 and 2005 <= latest_cutoff and 2005 not in cutoffs:
+            cutoffs.append(2005)
+        if min_year < 2010 and 2010 <= latest_cutoff and 2010 not in cutoffs:
+            cutoffs.append(2010)
+        
+        # Sort and return
+        cutoffs = sorted(set(cutoffs))
+        
+        # Limit to reasonable number of options (max 10)
+        if len(cutoffs) > 10:
+            # Keep first, last, and evenly spaced in between
+            step = len(cutoffs) // 8
+            cutoffs = cutoffs[::step] if step > 1 else cutoffs[:10]
+        
+        return cutoffs

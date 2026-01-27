@@ -23,15 +23,54 @@ def render_stock_search(on_search: Callable[[str], None], stock_list: Optional[L
 
 def render_user_profile() -> Dict[str, Any]:
     """Render user profile input."""
-    st.subheader("Your Investment Profile")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        expected_return = st.slider("Expected CAGR %", 5, 30, 15, help="Annual return expectation")
-    with col2:
-        risk = st.selectbox("Risk Appetite", ["Low", "Medium", "High"], index=1)
-    with col3:
-        tenure = st.slider("Holding Period (Years)", 1, 10, 5)
-    return {'expected_return': expected_return, 'risk_appetite': risk.lower(), 'holding_tenure': tenure}
+    st.subheader("📋 Your Investment Profile")
+    
+    expected_return = st.slider(
+        "Expected CAGR %", 
+        min_value=0, max_value=50, value=15, 
+        help="Your expected annual return (0% = capital preservation, 50% = very aggressive)"
+    )
+    
+    risk = st.selectbox(
+        "Risk Appetite", 
+        ["Low", "Medium", "High"], 
+        index=1,
+        help="Low: Stable blue chips, Medium: Quality growth, High: Aggressive growth"
+    )
+    
+    tenure = st.slider(
+        "Holding Period (Years)", 
+        min_value=1, max_value=15, value=5,
+        help="How long you plan to hold"
+    )
+    
+    # Price range filter
+    st.markdown("---")
+    st.subheader("💰 Stock Price Filter")
+    
+    price_range = st.slider(
+        "Price Range (₹)",
+        min_value=0,
+        max_value=10000,
+        value=(0, 5000),
+        step=100,
+        help="Filter stocks by current price range"
+    )
+    
+    market_cap = st.selectbox(
+        "Market Cap",
+        ["Any", "Large Cap (>₹20,000 Cr)", "Mid Cap (₹5,000-20,000 Cr)", "Small Cap (<₹5,000 Cr)"],
+        index=0,
+        help="Filter by market capitalization"
+    )
+    
+    return {
+        'expected_return': expected_return, 
+        'risk_appetite': risk.lower(), 
+        'holding_tenure': tenure,
+        'price_range': price_range,
+        'market_cap': market_cap
+    }
 
 
 def render_signal_badge(signal: str, score: float):
