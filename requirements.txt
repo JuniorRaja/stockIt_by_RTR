@@ -1,0 +1,40 @@
+# Indian Equity Intelligence - Dependencies
+# Install with: pip install -r requirements.txt
+
+# Web Framework
+streamlit>=1.28.0
+
+# Data Sources (yfinance as primary, nsetools as secondary)
+# Note: jugaad-data removed due to beautifulsoup4 version conflict with yfinance
+# If you need jugaad-data, install it separately: pip install jugaad-data --no-deps
+yfinance>=0.2.31
+nsetools>=1.0.11
+
+# Data Processing
+pandas>=2.0.0
+numpy>=1.24.0
+pyarrow>=14.0.0  # For Parquet support
+
+# Database
+duckdb>=0.9.0
+
+# Machine Learning
+scikit-learn>=1.3.0
+xgboost>=2.0.0
+
+# Visualization
+plotly>=5.18.0
+matplotlib>=3.8.0
+
+# Configuration
+pyyaml>=6.0.1
+
+# Utilities
+requests>=2.31.0
+feedparser>=6.0.10  # For RSS feeds
+python-dateutil>=2.8.2
+tqdm>=4.66.0  # Progress bars
+beautifulsoup4>=4.11.1  # Web scraping
+
+# Optional: For better async performance
+aiohttp>=3.9.0

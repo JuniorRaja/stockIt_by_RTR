@@ -1,0 +1,150 @@
+# Indian Equity Intelligence - Configuration Settings
+# All thresholds and parameters are configurable here
+
+# Application Settings
+app:
+  name: "Indian Equity Intelligence"
+  version: "1.0.0"
+  debug: false
+  offline_mode: false  # Set to true after initial setup
+
+# Data Sources Configuration
+data_sources:
+  # Priority order for data fetching (highest first)
+  priority:
+    - yahoo_finance
+    - nse_tools
+  
+  # Yahoo Finance settings
+  yahoo_finance:
+    enabled: true
+    suffix: ".NS"  # NSE suffix
+    max_retries: 3
+    timeout: 30
+  
+  # NSE Tools settings
+  nse_tools:
+    enabled: true
+    max_retries: 3
+
+# Database Settings
+database:
+  type: "duckdb"
+  path: "data/db/equity_intelligence.db"
+  cache_dir: "data/cache"
+
+# Analysis Thresholds
+thresholds:
+  # Legacy & Governance
+  governance:
+    min_years_listed: 5
+    min_promoter_holding: 25.0
+    max_pledge_ratio: 20.0
+    dividend_consistency_years: 5
+    auditor_change_warning_years: 3
+  
+  # Financial Trajectory
+  financial:
+    min_revenue_cagr_3y: 10.0
+    min_revenue_cagr_5y: 8.0
+    min_roce: 12.0
+    min_fcf_yield: 2.0
+    max_debt_to_equity: 1.5
+  
+  # Valuation Context
+  valuation:
+    pe_percentile_expensive: 80
+    pe_percentile_cheap: 20
+    pb_max_growth: 5.0
+    pb_max_value: 2.0
+  
+  # Market Behaviour
+  market:
+    max_drawdown_threshold: 50.0
+    recovery_months_warning: 24
+    volatility_high_threshold: 40.0
+
+# Risk Profiles
+risk_profiles:
+  low:
+    max_volatility: 25.0
+    min_dividend_yield: 1.5
+    min_promoter_holding: 50.0
+    max_debt_equity: 0.5
+    min_years_profitable: 7
+  
+  medium:
+    max_volatility: 35.0
+    min_dividend_yield: 0.5
+    min_promoter_holding: 35.0
+    max_debt_equity: 1.0
+    min_years_profitable: 5
+  
+  high:
+    max_volatility: 50.0
+    min_dividend_yield: 0.0
+    min_promoter_holding: 25.0
+    max_debt_equity: 2.0
+    min_years_profitable: 3
+
+# Signal Generation
+signals:
+  weights:
+    governance: 0.25
+    financial: 0.30
+    valuation: 0.25
+    market_behaviour: 0.15
+    ml_context: 0.05
+  
+  buy_threshold: 70
+  hold_threshold: 50
+  avoid_threshold: 30
+
+# Red Flag Configuration
+red_flags:
+  auditor_resignation: 
+    severity: "high"
+    penalty: 20
+  
+  promoter_pledge_increase:
+    threshold: 10.0
+    severity: "high"
+    penalty: 15
+  
+  promoter_stake_reduction:
+    threshold: 5.0
+    severity: "medium"
+    penalty: 10
+  
+  earnings_without_cash:
+    threshold: 0.5
+    severity: "high"
+    penalty: 20
+  
+  negative_fcf_streak:
+    years: 3
+    severity: "medium"
+    penalty: 15
+
+# ML Model Configuration
+ml_config:
+  model_type: "xgboost"
+  n_clusters: 8
+  min_samples_for_training: 100
+
+# Time Travel Mode
+time_travel:
+  min_year: 2005
+  available_cutoffs:
+    - 2010
+    - 2015
+    - 2018
+    - 2020
+    - 2022
+
+# UI Settings
+ui:
+  theme: "dark"
+  charts_height: 400
+  default_holding_tenure: 5
+  default_expected_return: 15.0
