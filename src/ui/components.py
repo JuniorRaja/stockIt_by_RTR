@@ -48,14 +48,25 @@ def render_user_profile() -> Dict[str, Any]:
     st.markdown("---")
     st.subheader("💰 Stock Price Filter")
     
-    price_range = st.slider(
-        "Price Range (₹)",
-        min_value=0,
-        max_value=10000,
-        value=(0, 5000),
-        step=100,
-        help="Filter stocks by current price range"
-    )
+    col1, col2 = st.columns(2)
+    with col1:
+        min_price = st.number_input(
+            "Min Price (₹)",
+            min_value=1,
+            max_value=100000,
+            value=1,
+            step=10,
+            help="Minimum stock price"
+        )
+    with col2:
+        max_price = st.number_input(
+            "Max Price (₹)",
+            min_value=1,
+            max_value=100000,
+            value=10000,
+            step=100,
+            help="Maximum stock price"
+        )
     
     market_cap = st.selectbox(
         "Market Cap",
@@ -68,7 +79,7 @@ def render_user_profile() -> Dict[str, Any]:
         'expected_return': expected_return, 
         'risk_appetite': risk.lower(), 
         'holding_tenure': tenure,
-        'price_range': price_range,
+        'price_range': (min_price, max_price),
         'market_cap': market_cap
     }
 

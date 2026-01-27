@@ -178,12 +178,33 @@ def download_forecaster(model_name):
     print(f"\n📥 Downloading {model_name}...")
     print(f"   From: huggingface.co/{repo}")
     print(f"   To: {local_dir}")
+    print("   This may take a few minutes...")
     
     try:
         from huggingface_hub import snapshot_download
-        snapshot_download(repo, local_dir=local_dir)
-        print(f"✓ Downloaded {model_name}")
-        return True
+        
+        # Download with explicit parameters
+        result = snapshot_download(
+            repo_id=repo,
+            local_dir=local_dir,
+            local_dir_use_symlinks=False,
+            resume_download=True,
+        )
+        
+        # Verify files were downloaded
+        dir_path = Path(local_dir)
+        files = list(dir_path.glob("*"))
+        if files:
+            print(f"✓ Downloaded {model_name} ({len(files)} files)")
+            return True
+        else:
+            print(f"⚠ Download completed but no files found in {local_dir}")
+            return False
+            
+    except ImportError:
+        print(f"✗ huggingface_hub not installed")
+        print(f"   Run: pip install huggingface_hub")
+        return False
     except Exception as e:
         print(f"✗ Failed to download {model_name}: {e}")
         print(f"\n  Manual download command:")
@@ -214,28 +235,61 @@ def download_explainer(model_name):
     local_dir = f"models/explainer/{model_name}"
     local_file = f"{local_dir}/model.gguf"
     
+    # Create directory
+    Path(local_dir).mkdir(parents=True, exist_ok=True)
+    
     print(f"\n📥 Downloading {model_name}...")
     print(f"   From: huggingface.co/{info['repo']}")
     print(f"   To: {local_file}")
+    print("   This is a large file (~2GB), please wait...")
     
     try:
         from huggingface_hub import hf_hub_download
-        hf_hub_download(
+        
+        downloaded_path = hf_hub_download(
             repo_id=info['repo'],
             filename=info['file'],
             local_dir=local_dir,
             local_dir_use_symlinks=False,
+            resume_download=True,
         )
+        
+        print(f"   Downloaded to: {downloaded_path}")
+        
         # Rename to model.gguf for consistency
         downloaded = Path(local_dir) / info['file']
         target = Path(local_file)
-        if downloaded.exists() and not target.exists():
-            downloaded.rename(target)
-        print(f"✓ Downloaded {model_name}")
-        return True
+        
+        if downloaded.exists():
+            if not target.exists():
+                downloaded.rename(target)
+                print(f"✓ Downloaded and renamed to {target}")
+            else:
+                print(f"✓ Downloaded {model_name}")
+            return True
+        elif target.exists():
+            print(f"✓ Model already exists at {target}")
+            return True
+        else:
+            # Check if file is in cache subdirectory
+            for f in Path(local_dir).rglob("*.gguf"):
+                if not target.exists():
+                    import shutil
+                    shutil.copy2(f, target)
+                    print(f"✓ Copied from cache to {target}")
+                    return True
+            
+            print(f"⚠ Download completed but file not found at expected location")
+            return False
+            
+    except ImportError:
+        print(f"✗ huggingface_hub not installed")
+        print(f"   Run: pip install huggingface_hub")
+        return False
     except Exception as e:
         print(f"✗ Failed to download {model_name}: {e}")
         print(f"\n  Manual download command:")
+        print(f"  mkdir -p {local_dir}")
         print(f"  wget https://huggingface.co/{info['repo']}/resolve/main/{info['file']} -O {local_file}")
         return False
 

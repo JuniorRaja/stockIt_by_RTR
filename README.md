@@ -4,7 +4,7 @@ A **free**, **open-source**, **local-first** application for analyzing Indian eq
 
 > *"Is this stock suitable for this investor, under these assumptions — and what could invalidate the thesis?"*
 
-## Quick Start (4 Steps)
+## Quick Start (5 Steps)
 
 ### 1. Clone the Repository
 
@@ -13,7 +13,18 @@ git clone https://github.com/your-repo/indian-equity-intelligence.git
 cd indian-equity-intelligence
 ```
 
-### 2. Download ML Models
+### 2. Install Requirements
+
+```bash
+# Create virtual environment (recommended)
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### 3. Download ML Models
 
 Run the interactive model downloader to choose models based on your PC specs:
 
@@ -29,18 +40,28 @@ python download_models.py
 | 💻 **Standard** | 8-16GB | Chronos-T5-Small + LightGBM + Qwen2.5-3B |
 | 🪶 **Lite** | 4-8GB | Chronos-T5-Tiny + LightGBM (no LLM) |
 
-### 3. Install Requirements
+### 4. Train the Classifier
+
+Train the LightGBM classifier using the pre-downloaded stock data:
 
 ```bash
-# Create virtual environment (recommended)
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
+python train_classifier.py
 ```
 
-### 4. Run the Application
+This uses the **2,200+ stocks** in the `data/` directory — no internet needed!
+
+```
+📊 Found 2248 stocks with local data
+📈 Training on 500 stocks...
+✓ Successfully processed 487/500 stocks
+🔧 Training LightGBM classifier...
+✓ Training complete!
+   Accuracy: 72.45%
+   F1 Score: 68.23%
+💾 Model saved to: models/classifier/lightgbm/model.pkl
+```
+
+### 5. Run the Application
 
 ```bash
 streamlit run app.py
@@ -186,6 +207,23 @@ indian-equity-intelligence/
 # Re-run the model downloader
 python download_models.py
 ```
+
+### "Classifier not ready" warning
+```bash
+# Train the classifier using local data
+python train_classifier.py
+```
+
+### LightGBM fails on Mac (libomp error)
+```bash
+# Install OpenMP library first
+brew install libomp
+
+# Then reinstall LightGBM
+pip install --force-reinstall lightgbm
+```
+
+If that doesn't work, the training script will automatically use sklearn's GradientBoosting as a fallback.
 
 ### "llama-cpp-python build fails"
 ```bash

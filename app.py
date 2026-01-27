@@ -314,55 +314,126 @@ def main():
     
     st.title("Stock Analysis")
     
-    # Stock suggestions and quick picks
-    col1, col2, col3 = st.columns([3, 1, 1])
+    # Initialize session state for suggestions
+    if 'show_suggestions' not in st.session_state:
+        st.session_state.show_suggestions = False
+    
+    # Load available stock list for autocomplete
+    stock_list = []
+    try:
+        stock_list_file = Path("data/stock_lists/all_nse_stocks.json")
+        if stock_list_file.exists():
+            import json
+            with open(stock_list_file) as f:
+                stock_data = json.load(f)
+                if isinstance(stock_data, list):
+                    stock_list = sorted([s.get('symbol', s) if isinstance(s, dict) else s for s in stock_data[:500]])
+                elif isinstance(stock_data, dict):
+                    stock_list = sorted(list(stock_data.keys())[:500])
+    except Exception:
+        pass
+    
+    # Popular stocks for quick autocomplete
+    popular_stocks = ["RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "HINDUNILVR", 
+                      "ITC", "SBIN", "BHARTIARTL", "KOTAKBANK", "BAJFINANCE", "AXISBANK",
+                      "MARUTI", "TITAN", "SUNPHARMA", "HCLTECH", "WIPRO", "TECHM"]
+    
+    # Stock input with autocomplete
+    col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
     with col1:
-        symbol = st.text_input("Enter NSE Stock Symbol", placeholder="e.g., RELIANCE, TCS, INFY").upper().strip()
+        if stock_list:
+            # Autocomplete with selectbox
+            all_stocks = [""] + popular_stocks + [s for s in stock_list if s not in popular_stocks]
+            default_idx = 0
+            if 'selected_stock' in st.session_state and st.session_state.selected_stock in all_stocks:
+                default_idx = all_stocks.index(st.session_state.selected_stock)
+            symbol = st.selectbox(
+                "Select or type NSE Stock Symbol",
+                all_stocks,
+                index=default_idx,
+                format_func=lambda x: x if x else "Type to search...",
+                key="stock_selector"
+            )
+        else:
+            symbol = st.text_input("Enter NSE Stock Symbol", placeholder="e.g., RELIANCE, TCS, INFY").upper().strip()
     with col2:
         analyze = st.button("🔍 Analyze", type="primary", use_container_width=True)
     with col3:
         suggest = st.button("💡 Suggest", use_container_width=True)
+    with col4:
+        reset = st.button("🔄 Reset", use_container_width=True)
     
-    # Stock suggestions panel
+    # Handle reset
+    if reset:
+        for key in ['results', 'data', 'symbol', 'show_suggestions', 'selected_stock']:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.rerun()
+    
+    # Toggle suggestions panel
     if suggest:
-        st.info("**Popular Stocks by Category:**")
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.markdown("**Large Cap**")
-            for s in ["RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK"]:
-                if st.button(s, key=f"sug_{s}", use_container_width=True):
-                    st.session_state.suggested_symbol = s
-                    st.rerun()
-        with col2:
-            st.markdown("**Mid Cap**")
-            for s in ["PERSISTENT", "COFORGE", "MPHASIS", "LTIM", "TATAELXSI"]:
-                if st.button(s, key=f"sug_{s}", use_container_width=True):
-                    st.session_state.suggested_symbol = s
-                    st.rerun()
-        with col3:
-            st.markdown("**Banking**")
-            for s in ["KOTAKBANK", "AXISBANK", "SBIN", "INDUSINDBK", "BANDHANBNK"]:
-                if st.button(s, key=f"sug_{s}", use_container_width=True):
-                    st.session_state.suggested_symbol = s
-                    st.rerun()
-        with col4:
-            st.markdown("**Pharma/FMCG**")
-            for s in ["SUNPHARMA", "DRREDDY", "NESTLEIND", "HINDUNILVR", "ITC"]:
-                if st.button(s, key=f"sug_{s}", use_container_width=True):
-                    st.session_state.suggested_symbol = s
-                    st.rerun()
+        st.session_state.show_suggestions = not st.session_state.show_suggestions
     
-    # Handle suggested symbol
-    if 'suggested_symbol' in st.session_state and st.session_state.suggested_symbol:
-        symbol = st.session_state.suggested_symbol
-        del st.session_state.suggested_symbol
-        # Auto-analyze the suggested stock
+    # Stock suggestions panel - based on user profile
+    if st.session_state.show_suggestions:
+        risk_appetite = profile_dict.get('risk_appetite', 'medium')
+        
+        # Define suggestions based on risk profile
+        suggestions = {
+            'low': {
+                'title': '📊 Conservative Picks (Low Risk)',
+                'categories': {
+                    'Blue Chips': ['RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'HINDUNILVR'],
+                    'Dividend Stocks': ['ITC', 'POWERGRID', 'COALINDIA', 'ONGC', 'NTPC'],
+                    'Stable Banking': ['HDFCBANK', 'ICICIBANK', 'KOTAKBANK', 'SBIN', 'AXISBANK'],
+                }
+            },
+            'medium': {
+                'title': '⚖️ Balanced Picks (Medium Risk)',
+                'categories': {
+                    'Quality Growth': ['TCS', 'INFY', 'HCLTECH', 'WIPRO', 'TECHM'],
+                    'Banking & Finance': ['BAJFINANCE', 'HDFCLIFE', 'SBILIFE', 'ICICIPRULI', 'MUTHOOTFIN'],
+                    'Consumer': ['TITAN', 'DMART', 'TRENT', 'PAGEIND', 'BATAINDIA'],
+                }
+            },
+            'high': {
+                'title': '🚀 Growth Picks (High Risk)',
+                'categories': {
+                    'Mid-Cap IT': ['PERSISTENT', 'COFORGE', 'LTIM', 'MPHASIS', 'TATAELXSI'],
+                    'Small-Cap Growth': ['DEEPAKNTR', 'POLYCAB', 'AFFLE', 'HAPPSTMNDS', 'ROUTE'],
+                    'Emerging Sectors': ['IRCTC', 'CDSL', 'AAVAS', 'APTUS', 'DIXON'],
+                }
+            }
+        }
+        
+        profile_suggestions = suggestions.get(risk_appetite, suggestions['medium'])
+        
+        st.info(f"**{profile_suggestions['title']}** (Based on your {risk_appetite.title()} risk profile) - Click any stock to analyze")
+        
+        cols = st.columns(len(profile_suggestions['categories']))
+        for col, (category, stocks) in zip(cols, profile_suggestions['categories'].items()):
+            with col:
+                st.markdown(f"**{category}**")
+                for s in stocks:
+                    if st.button(s, key=f"sug_{s}", use_container_width=True):
+                        # Set the selected stock and trigger analysis
+                        st.session_state.selected_stock = s
+                        st.session_state.analyze_stock = s
+                        st.session_state.show_suggestions = False
+                        st.rerun()
+    
+    # Handle stock selection from suggestions
+    if 'analyze_stock' in st.session_state and st.session_state.analyze_stock:
+        symbol = st.session_state.analyze_stock
+        del st.session_state.analyze_stock
+        # Auto-analyze
         st.session_state.symbol = symbol
         st.session_state.profile = profile
-        data = app.fetch_data(symbol)
-        if data:
-            st.session_state.data = data
-            st.session_state.results = app.run_analysis(symbol, profile, data)
+        with st.spinner(f"Analyzing {symbol}..."):
+            data = app.fetch_data(symbol)
+            if data:
+                st.session_state.data = data
+                st.session_state.results = app.run_analysis(symbol, profile, data)
     
     if analyze and symbol:
         st.session_state.symbol = symbol
@@ -445,10 +516,17 @@ def main():
                     st.subheader("📈 Price Predictions")
                     col1, col2 = st.columns(2)
                     
-                    current_price = data['price_history'].iloc[-1]
+                    # Get current price from the 'close' column
+                    price_df = data['price_history']
+                    if 'close' in price_df.columns:
+                        current_price = float(price_df['close'].iloc[-1])
+                    elif 'Close' in price_df.columns:
+                        current_price = float(price_df['Close'].iloc[-1])
+                    else:
+                        current_price = float(price_df.iloc[-1, 3])  # Fallback to 4th column
                     
                     with col1:
-                        if ml_prediction.price_prediction_5d:
+                        if ml_prediction.price_prediction_5d and current_price > 0:
                             change_5d = ((ml_prediction.price_prediction_5d - current_price) / current_price) * 100
                             st.metric(
                                 "5-Day Prediction",
@@ -457,7 +535,7 @@ def main():
                             )
                     
                     with col2:
-                        if ml_prediction.price_prediction_30d:
+                        if ml_prediction.price_prediction_30d and current_price > 0:
                             change_30d = ((ml_prediction.price_prediction_30d - current_price) / current_price) * 100
                             st.metric(
                                 "30-Day Prediction",
@@ -600,22 +678,139 @@ def main():
             cutoffs = app.time_travel.get_available_cutoffs(data['price_history'])
             if cutoffs:
                 cutoff = st.selectbox("Travel back to December of:", cutoffs)
-                if st.button("🕰️ Run Time Travel"):
-                    st.info("Time Travel analysis runs the full analysis engine with historical data only.")
+                if st.button("🕰️ Run Time Travel", type="primary"):
+                    with st.spinner(f"Traveling back to {cutoff}..."):
+                        try:
+                            tt_result = app.time_travel.analyze_at_cutoff(
+                                symbol=symbol,
+                                cutoff_year=cutoff,
+                                user_profile=profile,
+                                stock_info=data['stock_info'],
+                                price_history=data['price_history'],
+                                financials=data['financials'],
+                                shareholding=data.get('shareholding', pd.DataFrame()),
+                                dividends=data.get('dividends', pd.DataFrame()),
+                                nifty_history=data.get('nifty_history'),
+                                include_outcome=True
+                            )
+                            
+                            st.success(f"Analysis complete for December {cutoff}")
+                            
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.markdown(f"### Signal at {cutoff}")
+                                render_signal_badge(tt_result.signal_at_cutoff.signal, tt_result.signal_at_cutoff.composite_score)
+                            
+                            with col2:
+                                st.markdown("### Actual Outcome")
+                                if tt_result.actual_outcome:
+                                    for period, data_out in tt_result.actual_outcome.items():
+                                        if isinstance(data_out, dict) and 'return' in data_out:
+                                            ret = data_out['return']
+                                            color = "green" if ret > 0 else "red"
+                                            st.markdown(f"**{period.upper()}**: <span style='color:{color}'>{ret:+.1f}%</span>", unsafe_allow_html=True)
+                                else:
+                                    st.warning("Outcome data not available")
+                            
+                            st.markdown("---")
+                            st.markdown("### Hindsight Analysis")
+                            st.info(tt_result.hindsight_analysis)
+                            
+                            # Show red flags at that time
+                            if tt_result.red_flags_at_cutoff:
+                                st.markdown("### Red Flags (at that time)")
+                                for flag in tt_result.red_flags_at_cutoff:
+                                    st.warning(f"⚠️ {flag.get('description', flag)}")
+                                    
+                        except Exception as e:
+                            st.error(f"Time Travel failed: {e}")
             else:
                 st.warning("Not enough historical data for time travel.")
         
         with tab6:
             st.subheader("🎯 Scenario Simulator")
-            st.info("Stress-test your investment thesis")
+            st.info("Stress-test your investment thesis under various market conditions")
+            
             scenarios = app.scenario_sim.list_scenarios()
             selected = st.selectbox("Select Scenario:", [s['key'] for s in scenarios],
                                     format_func=lambda x: next(s['name'] for s in scenarios if s['key'] == x))
+            
             for s in scenarios:
                 if s['key'] == selected:
-                    st.info(s['description'])
-            if st.button("Run Scenario"):
-                st.info("Scenario simulation shows impact on expected returns and thesis resilience.")
+                    st.caption(s['description'])
+            
+            if st.button("🎯 Run Scenario", type="primary"):
+                with st.spinner("Running scenario simulation..."):
+                    try:
+                        # Build financial metrics and valuation from results
+                        # Get operating margin from details dict or use default
+                        fin_details = results['financial'].details or {}
+                        opm = fin_details.get('opm_current', fin_details.get('operating_margin', 15))
+                        
+                        fin_metrics = {
+                            'revenue_cagr_5y': results['financial'].revenue_cagr_5y or 10,
+                            'operating_margin': opm,
+                        }
+                        # Get current price from price history
+                        price_df = data['price_history']
+                        if len(price_df) > 0:
+                            if 'close' in price_df.columns:
+                                curr_price = float(price_df['close'].iloc[-1])
+                            elif 'Close' in price_df.columns:
+                                curr_price = float(price_df['Close'].iloc[-1])
+                            else:
+                                curr_price = 100
+                        else:
+                            curr_price = 100
+                        
+                        val_metrics = {
+                            'pe_ratio': results['valuation'].pe_ratio or 20,
+                            'current_price': curr_price,
+                        }
+                        user_profile_dict = {
+                            'holding_tenure': profile.holding_tenure,
+                            'expected_return': profile.expected_return,
+                        }
+                        
+                        scenario_result = app.scenario_sim.simulate(
+                            scenario_name=selected,
+                            stock_info=data['stock_info'],
+                            financial_metrics=fin_metrics,
+                            valuation=val_metrics,
+                            user_profile=user_profile_dict
+                        )
+                        
+                        st.success(f"Scenario: {scenario_result.scenario.name}")
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.markdown("### Base Case")
+                            st.metric("Expected Return", f"{scenario_result.base_case['expected_return']:.1f}%")
+                            st.metric("Target Price", f"₹{scenario_result.base_case['target_price']:.0f}")
+                        
+                        with col2:
+                            st.markdown("### Stressed Case")
+                            stressed_ret = scenario_result.stressed_case['expected_return']
+                            base_ret = scenario_result.base_case['expected_return']
+                            st.metric("Expected Return", f"{stressed_ret:.1f}%", f"{stressed_ret - base_ret:.1f}%")
+                            st.metric("Target Price", f"₹{scenario_result.stressed_case['target_price']:.0f}")
+                        
+                        st.markdown("---")
+                        
+                        # Resilience rating
+                        resilience_colors = {'robust': 'green', 'resilient': 'blue', 'moderate': 'orange', 'fragile': 'red'}
+                        color = resilience_colors.get(scenario_result.resilience_rating, 'gray')
+                        st.markdown(f"### Resilience Rating: <span style='color:{color}'>{scenario_result.resilience_rating.upper()}</span>", unsafe_allow_html=True)
+                        
+                        if scenario_result.signal_change:
+                            st.warning(f"⚠️ {scenario_result.signal_change}")
+                        
+                        st.markdown("### Key Findings")
+                        for finding in scenario_result.key_findings:
+                            st.info(f"• {finding}")
+                            
+                    except Exception as e:
+                        st.error(f"Scenario simulation failed: {e}")
     
     else:
         st.markdown("""

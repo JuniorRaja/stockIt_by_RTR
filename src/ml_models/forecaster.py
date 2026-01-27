@@ -148,7 +148,7 @@ class ChronosForecaster(TimeSeriesForecaster):
             self._pipeline = ChronosPipeline.from_pretrained(
                 model_id,
                 device_map=device,
-                torch_dtype=dtype,
+                dtype=dtype,  # Updated from torch_dtype (deprecated)
             )
             
             self._model = self._pipeline
