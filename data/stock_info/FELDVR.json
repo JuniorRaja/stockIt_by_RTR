@@ -108,7 +108,6 @@
   "gmtOffSetMilliseconds": 19800000,
   "market": "in_market",
   "esgPopulated": false,
-  "marketState": "POSTPOST",
   "shortName": "FUTURE ENTERPRISES LTD",
   "longName": "Future Enterprises Limited",
   "hasPrePostMarketData": false,
@@ -122,6 +121,7 @@
   "fiftyTwoWeekRange": "2.73 - 5.09",
   "fiftyTwoWeekHighChange": -2.14,
   "fiftyTwoWeekHighChangePercent": -0.42043224,
+  "marketState": "POSTPOST",
   "fiftyTwoWeekChangePercent": -39.17526,
   "earningsTimestampStart": 1712322957,
   "earningsTimestampEnd": 1712322957,
@@ -135,6 +135,6 @@
   "exchangeDataDelayedBy": 15,
   "cryptoTradeable": false,
   "trailingPegRatio": null,
-  "downloaded_at": "2026-01-27T20:07:08.520179",
+  "downloaded_at": "2026-01-27T20:54:34.774597",
   "years_of_data": 19.1
 }

@@ -110,6 +110,7 @@
   "shortName": "CREST VENTURES LIMITED",
   "longName": "Crest Ventures Limited",
   "marketState": "POSTPOST",
+  "regularMarketTime": 1769507941,
   "exchange": "NSI",
   "messageBoardId": "finmb_20965071",
   "exchangeTimezoneName": "Asia/Kolkata",
@@ -117,9 +118,6 @@
   "gmtOffSetMilliseconds": 19800000,
   "market": "in_market",
   "esgPopulated": false,
-  "regularMarketTime": 1769507941,
-  "hasPrePostMarketData": false,
-  "firstTradeDateMilliseconds": 1167191100000,
   "regularMarketChange": -6.649994,
   "regularMarketDayRange": "358.6 - 366.1",
   "fullExchangeName": "NSE",
@@ -143,7 +141,9 @@
   "cryptoTradeable": false,
   "regularMarketChangePercent": -1.8065727,
   "regularMarketPrice": 361.45,
+  "hasPrePostMarketData": false,
+  "firstTradeDateMilliseconds": 1167191100000,
   "trailingPegRatio": null,
-  "downloaded_at": "2026-01-27T20:06:31.034305",
+  "downloaded_at": "2026-01-27T20:42:30.755106",
   "years_of_data": 19.1
 }

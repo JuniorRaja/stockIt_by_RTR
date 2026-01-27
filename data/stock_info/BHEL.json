@@ -125,6 +125,7 @@
   "gmtOffSetMilliseconds": 19800000,
   "market": "in_market",
   "esgPopulated": false,
+  "marketState": "POSTPOST",
   "shortName": "BHEL",
   "longName": "Bharat Heavy Electricals Limited",
   "hasPrePostMarketData": false,
@@ -138,7 +139,6 @@
   "fiftyTwoWeekRange": "176.0 - 305.9",
   "fiftyTwoWeekHighChange": -58.199997,
   "fiftyTwoWeekHighChangePercent": -0.19025825,
-  "marketState": "POSTPOST",
   "fiftyTwoWeekChangePercent": 29.25061,
   "earningsTimestamp": 1768816800,
   "earningsTimestampStart": 1768903200,
@@ -159,6 +159,6 @@
   "averageAnalystRating": "2.9 - Hold",
   "cryptoTradeable": false,
   "trailingPegRatio": null,
-  "downloaded_at": "2026-01-27T20:06:03.714033",
+  "downloaded_at": "2026-01-27T20:38:49.828283",
   "years_of_data": 30.1
 }

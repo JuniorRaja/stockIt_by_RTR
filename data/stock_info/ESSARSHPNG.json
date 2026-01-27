@@ -93,6 +93,9 @@
   "quoteSourceName": "Delayed Quote",
   "triggerable": true,
   "customPriceAlertConfidence": "HIGH",
+  "shortName": "ESSAR SHIPPING LTD",
+  "longName": "Essar Shipping Limited",
+  "marketState": "POSTPOST",
   "regularMarketChangePercent": 0.9486818,
   "regularMarketPrice": 23.41,
   "regularMarketTime": 1769508003,
@@ -103,9 +106,6 @@
   "gmtOffSetMilliseconds": 19800000,
   "market": "in_market",
   "esgPopulated": false,
-  "marketState": "POSTPOST",
-  "shortName": "ESSAR SHIPPING LTD",
-  "longName": "Essar Shipping Limited",
   "hasPrePostMarketData": false,
   "firstTradeDateMilliseconds": 1321328700000,
   "regularMarketChange": 0.21999931,
@@ -131,6 +131,6 @@
   "exchangeDataDelayedBy": 15,
   "cryptoTradeable": false,
   "trailingPegRatio": null,
-  "downloaded_at": "2026-01-27T20:07:03.184467",
+  "downloaded_at": "2026-01-27T20:54:08.288127",
   "years_of_data": 14.2
 }

@@ -27,8 +27,8 @@ def render_user_profile() -> Dict[str, Any]:
     
     expected_return = st.slider(
         "Expected CAGR %", 
-        min_value=5, max_value=35, value=15, 
-        help="Your expected annual return"
+        min_value=0, max_value=50, value=15, 
+        help="Your expected annual return (0% = capital preservation, 50% = very aggressive)"
     )
     
     risk = st.selectbox(
@@ -44,10 +44,32 @@ def render_user_profile() -> Dict[str, Any]:
         help="How long you plan to hold"
     )
     
+    # Price range filter
+    st.markdown("---")
+    st.subheader("💰 Stock Price Filter")
+    
+    price_range = st.slider(
+        "Price Range (₹)",
+        min_value=0,
+        max_value=10000,
+        value=(0, 5000),
+        step=100,
+        help="Filter stocks by current price range"
+    )
+    
+    market_cap = st.selectbox(
+        "Market Cap",
+        ["Any", "Large Cap (>₹20,000 Cr)", "Mid Cap (₹5,000-20,000 Cr)", "Small Cap (<₹5,000 Cr)"],
+        index=0,
+        help="Filter by market capitalization"
+    )
+    
     return {
         'expected_return': expected_return, 
         'risk_appetite': risk.lower(), 
-        'holding_tenure': tenure
+        'holding_tenure': tenure,
+        'price_range': price_range,
+        'market_cap': market_cap
     }
 
 

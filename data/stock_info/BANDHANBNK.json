@@ -112,7 +112,6 @@
   "shortName": "BANDHAN BANK LIMITED",
   "longName": "Bandhan Bank Limited",
   "marketState": "POSTPOST",
-  "regularMarketTime": 1769508000,
   "exchange": "NSI",
   "messageBoardId": "finmb_306387900",
   "exchangeTimezoneName": "Asia/Kolkata",
@@ -120,6 +119,9 @@
   "gmtOffSetMilliseconds": 19800000,
   "market": "in_market",
   "esgPopulated": false,
+  "regularMarketTime": 1769508000,
+  "hasPrePostMarketData": false,
+  "firstTradeDateMilliseconds": 1522122300000,
   "regularMarketChange": -0.30999756,
   "regularMarketDayRange": "147.68 - 150.82",
   "fullExchangeName": "NSE",
@@ -152,9 +154,7 @@
   "cryptoTradeable": false,
   "regularMarketChangePercent": -0.2075923,
   "regularMarketPrice": 149.02,
-  "hasPrePostMarketData": false,
-  "firstTradeDateMilliseconds": 1522122300000,
   "trailingPegRatio": null,
-  "downloaded_at": "2026-01-27T20:05:53.962154",
+  "downloaded_at": "2026-01-27T20:37:38.110142",
   "years_of_data": 7.8
 }

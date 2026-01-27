@@ -102,7 +102,6 @@
   "customPriceAlertConfidence": "HIGH",
   "regularMarketChangePercent": 3.5072083,
   "regularMarketPrice": 69.65,
-  "regularMarketTime": 1769507546,
   "exchange": "NSI",
   "messageBoardId": "finmb_20342723",
   "exchangeTimezoneName": "Asia/Kolkata",
@@ -110,9 +109,10 @@
   "gmtOffSetMilliseconds": 19800000,
   "market": "in_market",
   "esgPopulated": false,
-  "marketState": "POSTPOST",
+  "regularMarketTime": 1769507546,
   "shortName": "EASTERN SILK INDUSTRIES L",
   "longName": "Eastern Silk Industries Limited",
+  "marketState": "POSTPOST",
   "hasPrePostMarketData": false,
   "firstTradeDateMilliseconds": 1025495100000,
   "regularMarketChange": 2.3600006,
@@ -137,6 +137,6 @@
   "exchangeDataDelayedBy": 15,
   "cryptoTradeable": false,
   "trailingPegRatio": null,
-  "downloaded_at": "2026-01-27T20:06:52.230558",
+  "downloaded_at": "2026-01-27T20:52:54.086472",
   "years_of_data": 23.6
 }

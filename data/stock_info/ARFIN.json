@@ -112,6 +112,7 @@
   "gmtOffSetMilliseconds": 19800000,
   "market": "in_market",
   "esgPopulated": false,
+  "marketState": "POSTPOST",
   "shortName": "ARFIN INDIA LIMITED",
   "longName": "Arfin India Limited",
   "hasPrePostMarketData": false,
@@ -125,7 +126,6 @@
   "fiftyTwoWeekRange": "31.43 - 84.01",
   "fiftyTwoWeekHighChange": -8.830002,
   "fiftyTwoWeekHighChangePercent": -0.105106555,
-  "marketState": "POSTPOST",
   "fiftyTwoWeekChangePercent": 104.010414,
   "epsTrailingTwelveMonths": 0.42,
   "fiftyDayAverageChange": 7.9830017,
@@ -136,6 +136,6 @@
   "exchangeDataDelayedBy": 15,
   "cryptoTradeable": false,
   "trailingPegRatio": null,
-  "downloaded_at": "2026-01-27T20:05:33.703402",
+  "downloaded_at": "2026-01-27T20:35:07.019830",
   "years_of_data": 0.5
 }

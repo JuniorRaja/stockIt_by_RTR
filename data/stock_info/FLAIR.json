@@ -111,6 +111,7 @@
   "customPriceAlertConfidence": "HIGH",
   "regularMarketChangePercent": 0.49619585,
   "regularMarketPrice": 303.8,
+  "regularMarketTime": 1769508003,
   "exchange": "NSI",
   "messageBoardId": "finmb_570835810",
   "exchangeTimezoneName": "Asia/Kolkata",
@@ -118,9 +119,8 @@
   "gmtOffSetMilliseconds": 19800000,
   "market": "in_market",
   "esgPopulated": false,
-  "regularMarketTime": 1769508003,
-  "shortName": "FLAIR WRITING INDUST LTD",
   "marketState": "POSTPOST",
+  "shortName": "FLAIR WRITING INDUST LTD",
   "hasPrePostMarketData": false,
   "firstTradeDateMilliseconds": 1701402300000,
   "regularMarketChange": 1.5,
@@ -150,6 +150,6 @@
   "exchangeDataDelayedBy": 15,
   "cryptoTradeable": false,
   "trailingPegRatio": null,
-  "downloaded_at": "2026-01-27T20:07:11.176104",
+  "downloaded_at": "2026-01-27T20:54:45.660140",
   "years_of_data": 2.2
 }

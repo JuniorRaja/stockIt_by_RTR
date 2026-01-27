@@ -103,8 +103,6 @@
   "quoteSourceName": "Delayed Quote",
   "triggerable": true,
   "customPriceAlertConfidence": "HIGH",
-  "marketState": "POSTPOST",
-  "shortName": "A B INFRABUILD LIMITED",
   "regularMarketChangePercent": -1.1117224,
   "regularMarketPrice": 17.79,
   "hasPrePostMarketData": false,
@@ -130,6 +128,7 @@
   "sourceInterval": 15,
   "exchangeDataDelayedBy": 15,
   "cryptoTradeable": false,
+  "marketState": "POSTPOST",
   "regularMarketTime": 1769507996,
   "exchange": "NSI",
   "messageBoardId": "finmb_573392507",
@@ -138,7 +137,8 @@
   "gmtOffSetMilliseconds": 19800000,
   "market": "in_market",
   "esgPopulated": false,
+  "shortName": "A B INFRABUILD LIMITED",
   "trailingPegRatio": null,
-  "downloaded_at": "2026-01-27T20:05:10.051602",
+  "downloaded_at": "2026-01-27T20:31:46.696191",
   "years_of_data": 6.5
 }

@@ -6,28 +6,73 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Optional
 
+# Common chart configuration with zoom reset and other useful tools
+CHART_CONFIG = {
+    'displayModeBar': True,
+    'modeBarButtonsToAdd': ['resetScale2d', 'resetViews'],
+    'modeBarButtonsToRemove': ['lasso2d', 'select2d'],
+    'displaylogo': False,
+    'scrollZoom': True,
+}
+
 
 def create_price_chart(price_history: pd.DataFrame, title: str = "Price History", show_volume: bool = True) -> go.Figure:
-    """Create interactive price chart."""
-    if show_volume and 'volume' in price_history.columns:
+    """Create interactive price chart with full date range."""
+    # Ensure we use all available data
+    df = price_history.copy()
+    if 'date' in df.columns:
+        df['date'] = pd.to_datetime(df['date'])
+        df = df.sort_values('date')
+    
+    if show_volume and 'volume' in df.columns:
         fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.7, 0.3])
-        fig.add_trace(go.Candlestick(x=price_history['date'], open=price_history['open'],
-                                      high=price_history['high'], low=price_history['low'],
-                                      close=price_history['close'], name='Price'), row=1, col=1)
-        colors = ['red' if r['close'] < r['open'] else 'green' for _, r in price_history.iterrows()]
-        fig.add_trace(go.Bar(x=price_history['date'], y=price_history['volume'],
+        fig.add_trace(go.Candlestick(x=df['date'], open=df['open'],
+                                      high=df['high'], low=df['low'],
+                                      close=df['close'], name='Price'), row=1, col=1)
+        colors = ['red' if r['close'] < r['open'] else 'green' for _, r in df.iterrows()]
+        fig.add_trace(go.Bar(x=df['date'], y=df['volume'],
                              marker_color=colors, name='Volume', opacity=0.5), row=2, col=1)
         fig.update_yaxes(title_text="Price (₹)", row=1, col=1)
         fig.update_yaxes(title_text="Volume", row=2, col=1)
     else:
         fig = go.Figure()
-        fig.add_trace(go.Candlestick(x=price_history['date'], open=price_history['open'],
-                                      high=price_history['high'], low=price_history['low'],
-                                      close=price_history['close'], name='Price'))
+        fig.add_trace(go.Candlestick(x=df['date'], open=df['open'],
+                                      high=df['high'], low=df['low'],
+                                      close=df['close'], name='Price'))
         fig.update_yaxes(title_text="Price (₹)")
     
-    fig.update_layout(title=title, xaxis_rangeslider_visible=False, template="plotly_dark", height=500)
+    # Add date range info to title
+    if 'date' in df.columns and len(df) > 0:
+        start_year = df['date'].min().year
+        end_year = df['date'].max().year
+        title = f"{title} ({start_year} - {end_year})"
+    
+    fig.update_layout(
+        title=title, 
+        xaxis_rangeslider_visible=False, 
+        template="plotly_dark", 
+        height=500,
+        # Add range selector buttons for quick navigation
+        xaxis=dict(
+            rangeselector=dict(
+                buttons=list([
+                    dict(count=1, label="1Y", step="year", stepmode="backward"),
+                    dict(count=5, label="5Y", step="year", stepmode="backward"),
+                    dict(count=10, label="10Y", step="year", stepmode="backward"),
+                    dict(step="all", label="ALL")
+                ]),
+                bgcolor="rgba(50, 50, 50, 0.8)",
+                activecolor="rgba(100, 100, 100, 0.8)",
+            ),
+            type="date"
+        )
+    )
     return fig
+
+
+def get_chart_config():
+    """Return chart config for Streamlit plotly_chart calls."""
+    return CHART_CONFIG
 
 
 def create_score_radar(scores: Dict[str, float]) -> go.Figure:
@@ -46,10 +91,18 @@ def create_score_radar(scores: Dict[str, float]) -> go.Figure:
 
 
 def create_drawdown_chart(price_history: pd.DataFrame) -> go.Figure:
-    """Create drawdown chart."""
-    prices = price_history.set_index('date')['close']
+    """Create drawdown chart with full history."""
+    df = price_history.copy()
+    df['date'] = pd.to_datetime(df['date'])
+    df = df.sort_values('date')
+    
+    prices = df.set_index('date')['close']
     running_max = prices.expanding().max()
     drawdown = (prices - running_max) / running_max * 100
+    
+    # Get date range for title
+    start_year = prices.index.min().year
+    end_year = prices.index.max().year
     
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=drawdown.index, y=drawdown.values, mode='lines', name='Drawdown',
@@ -60,8 +113,26 @@ def create_drawdown_chart(price_history: pd.DataFrame) -> go.Figure:
     fig.add_trace(go.Scatter(x=[max_dd_idx], y=[max_dd], mode='markers+text', name='Max DD',
                              marker=dict(size=12, color='darkred'), text=[f'{max_dd:.1f}%'], textposition='bottom center'))
     
-    fig.update_layout(title="Drawdown History", xaxis_title="Date", yaxis_title="Drawdown %",
-                      template="plotly_dark", height=350, yaxis=dict(range=[min(-60, max_dd * 1.1), 5]))
+    fig.update_layout(
+        title=f"Drawdown History ({start_year} - {end_year})", 
+        xaxis_title="Date", 
+        yaxis_title="Drawdown %",
+        template="plotly_dark", 
+        height=350, 
+        yaxis=dict(range=[min(-60, max_dd * 1.1), 5]),
+        # Add range selector
+        xaxis=dict(
+            rangeselector=dict(
+                buttons=list([
+                    dict(count=1, label="1Y", step="year", stepmode="backward"),
+                    dict(count=5, label="5Y", step="year", stepmode="backward"),
+                    dict(step="all", label="ALL")
+                ]),
+                bgcolor="rgba(50, 50, 50, 0.8)",
+            ),
+            type="date"
+        )
+    )
     return fig
 
 

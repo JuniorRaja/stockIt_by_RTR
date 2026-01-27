@@ -114,6 +114,9 @@
   "quoteSourceName": "Delayed Quote",
   "triggerable": true,
   "customPriceAlertConfidence": "HIGH",
+  "marketState": "POSTPOST",
+  "shortName": "GREENLAM INDUSTRIES LTD.",
+  "longName": "Greenlam Industries Limited",
   "regularMarketChangePercent": -1.1960022,
   "regularMarketPrice": 247.01,
   "hasPrePostMarketData": false,
@@ -144,7 +147,6 @@
   "sourceInterval": 15,
   "exchangeDataDelayedBy": 15,
   "cryptoTradeable": false,
-  "marketState": "POSTPOST",
   "regularMarketTime": 1769507997,
   "exchange": "NSI",
   "messageBoardId": "finmb_247965768",
@@ -153,9 +155,7 @@
   "gmtOffSetMilliseconds": 19800000,
   "market": "in_market",
   "esgPopulated": false,
-  "shortName": "GREENLAM INDUSTRIES LTD.",
-  "longName": "Greenlam Industries Limited",
   "trailingPegRatio": null,
-  "downloaded_at": "2026-01-27T20:07:32.427382",
+  "downloaded_at": "2026-01-27T20:57:50.680495",
   "years_of_data": 10.9
 }

@@ -102,7 +102,6 @@
   "customPriceAlertConfidence": "HIGH",
   "regularMarketChangePercent": -1.7635252,
   "regularMarketPrice": 415.0,
-  "regularMarketTime": 1769507997,
   "exchange": "NSI",
   "messageBoardId": "finmb_9622751",
   "exchangeTimezoneName": "Asia/Kolkata",
@@ -110,9 +109,10 @@
   "gmtOffSetMilliseconds": 19800000,
   "market": "in_market",
   "esgPopulated": false,
-  "marketState": "POSTPOST",
+  "regularMarketTime": 1769507997,
   "shortName": "EVEREST INDUSTRIES LTD",
   "longName": "Everest Industries Limited",
+  "marketState": "POSTPOST",
   "hasPrePostMarketData": false,
   "firstTradeDateMilliseconds": 1025495100000,
   "regularMarketChange": -7.450012,
@@ -137,6 +137,6 @@
   "exchangeDataDelayedBy": 15,
   "cryptoTradeable": false,
   "trailingPegRatio": null,
-  "downloaded_at": "2026-01-27T20:07:05.235736",
+  "downloaded_at": "2026-01-27T20:54:16.390998",
   "years_of_data": 23.6
 }

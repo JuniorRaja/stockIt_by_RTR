@@ -94,6 +94,9 @@
   "quoteSourceName": "Delayed Quote",
   "triggerable": true,
   "customPriceAlertConfidence": "HIGH",
+  "marketState": "POSTPOST",
+  "shortName": "CAPITAL TRUST LIMITED",
+  "longName": "Capital Trust Limited",
   "regularMarketChangePercent": -4.949913,
   "regularMarketPrice": 16.13,
   "hasPrePostMarketData": false,
@@ -119,7 +122,6 @@
   "sourceInterval": 15,
   "exchangeDataDelayedBy": 15,
   "cryptoTradeable": false,
-  "marketState": "POSTPOST",
   "regularMarketTime": 1769507819,
   "exchange": "NSI",
   "messageBoardId": "finmb_26634967",
@@ -128,9 +130,7 @@
   "gmtOffSetMilliseconds": 19800000,
   "market": "in_market",
   "esgPopulated": false,
-  "shortName": "CAPITAL TRUST LIMITED",
-  "longName": "Capital Trust Limited",
   "trailingPegRatio": null,
-  "downloaded_at": "2026-01-27T20:06:15.298760",
+  "downloaded_at": "2026-01-27T20:40:15.304492",
   "years_of_data": 9.0
 }

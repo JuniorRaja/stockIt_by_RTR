@@ -89,6 +89,9 @@
   "quoteSourceName": "Delayed Quote",
   "triggerable": true,
   "customPriceAlertConfidence": "HIGH",
+  "shortName": "GOLDEN TOBACCO LIMITED",
+  "longName": "Golden Tobacco Limited",
+  "marketState": "POSTPOST",
   "regularMarketChangePercent": -0.7203707,
   "regularMarketPrice": 30.32,
   "regularMarketTime": 1769507465,
@@ -99,9 +102,6 @@
   "gmtOffSetMilliseconds": 19800000,
   "market": "in_market",
   "esgPopulated": false,
-  "marketState": "POSTPOST",
-  "shortName": "GOLDEN TOBACCO LIMITED",
-  "longName": "Golden Tobacco Limited",
   "hasPrePostMarketData": false,
   "firstTradeDateMilliseconds": 1025495100000,
   "regularMarketChange": -0.22000122,
@@ -124,6 +124,6 @@
   "exchangeDataDelayedBy": 15,
   "cryptoTradeable": false,
   "trailingPegRatio": null,
-  "downloaded_at": "2026-01-27T20:07:29.379122",
+  "downloaded_at": "2026-01-27T20:57:05.722354",
   "years_of_data": 23.6
 }
