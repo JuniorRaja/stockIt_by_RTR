@@ -525,6 +525,328 @@ class MLEnsemble:
         return "\n".join(commands)
 
 
+class FundamentalAwareEnsemble:
+    """
+    Two-layer ensemble that combines technical + fundamental signals.
+    
+    Layer 1: Uses technical/price features only (momentum, RSI, MACD, etc.)
+    Layer 2: Meta-model that combines Layer 1 predictions with fundamental features
+    
+    This architecture ensures that:
+    1. Technical signals are captured without fundamental bias
+    2. Fundamentals can override technical signals when appropriate
+    3. The model doesn't over-rely on any single feature type
+    """
+    
+    # Technical features (price-based)
+    TECHNICAL_FEATURES = [
+        "return_1d", "return_5d", "return_20d", "return_60d", "return_252d",
+        "volatility_20d", "volatility_60d",
+        "momentum_10d", "momentum_30d",
+        "sma_ratio_20", "sma_ratio_50", "sma_ratio_200",
+        "high_52w_pct", "low_52w_pct",
+        "rsi_14", "rsi_28",
+        "macd", "macd_signal", "macd_histogram",
+        "bb_position", "atr_14", "adx_14",
+    ]
+    
+    # Fundamental features
+    FUNDAMENTAL_FEATURES = [
+        "years_listed", "promoter_holding", "pledge_ratio",
+        "dividend_consistency", "auditor_stability_score", "governance_score",
+        "revenue_cagr_3y", "revenue_cagr_5y",
+        "pat_cagr_3y", "pat_cagr_5y",
+        "roce", "fcf_yield", "debt_to_equity",
+        "operating_margin", "earnings_quality", "financial_score",
+        "pe_ratio", "pe_percentile",
+        "pb_ratio", "pb_percentile",
+        "ev_ebitda", "peg_ratio", "valuation_score",
+        "max_drawdown", "avg_recovery_months",
+        "volatility_1y", "volatility_3y",
+        "beta", "sharpe_ratio",
+        "relative_performance_1y", "market_score",
+    ]
+    
+    def __init__(self, n_classes: int = 4):
+        """
+        Initialize two-layer ensemble.
+        
+        Args:
+            n_classes: Number of output classes (BUY, HOLD, AVOID, SELL = 4)
+        """
+        self.n_classes = n_classes
+        self.layer1_model = None  # Technical features only
+        self.layer2_model = None  # Meta-model: L1 probs + fundamentals
+        self._is_trained = False
+        self._feature_names_l1 = []
+        self._feature_names_l2 = []
+        self._logger = logging.getLogger(self.__class__.__name__)
+    
+    @property
+    def is_ready(self) -> bool:
+        return self._is_trained and self.layer1_model is not None and self.layer2_model is not None
+    
+    def _get_technical_features(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Extract technical features from full feature set."""
+        available = [c for c in X.columns if c in self.TECHNICAL_FEATURES]
+        return X[available]
+    
+    def _get_fundamental_features(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Extract fundamental features from full feature set."""
+        available = [c for c in X.columns if c in self.FUNDAMENTAL_FEATURES]
+        return X[available]
+    
+    def train(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, Any]:
+        """
+        Train two-layer ensemble.
+        
+        Args:
+            X: Full feature DataFrame
+            y: Labels (encoded as integers)
+            
+        Returns:
+            Training metrics dictionary
+        """
+        try:
+            import lightgbm as lgb
+        except ImportError:
+            from sklearn.ensemble import GradientBoostingClassifier
+            lgb = None
+        
+        # Split features
+        X_technical = self._get_technical_features(X)
+        X_fundamental = self._get_fundamental_features(X)
+        
+        self._feature_names_l1 = list(X_technical.columns)
+        
+        # Train Layer 1: Technical features only
+        self._logger.info(f"Training Layer 1 with {len(X_technical.columns)} technical features...")
+        
+        if lgb:
+            self.layer1_model = lgb.LGBMClassifier(
+                n_estimators=150,
+                learning_rate=0.05,
+                max_depth=5,
+                num_leaves=31,
+                min_child_samples=20,
+                class_weight='balanced',
+                random_state=42,
+                verbose=-1,
+            )
+        else:
+            from sklearn.ensemble import GradientBoostingClassifier
+            self.layer1_model = GradientBoostingClassifier(
+                n_estimators=100,
+                learning_rate=0.1,
+                max_depth=4,
+                random_state=42,
+            )
+        
+        self.layer1_model.fit(X_technical.fillna(0), y)
+        
+        # Get Layer 1 predictions as features
+        l1_probs = self.layer1_model.predict_proba(X_technical.fillna(0))
+        l1_prob_df = pd.DataFrame(
+            l1_probs, 
+            columns=[f'l1_prob_{i}' for i in range(l1_probs.shape[1])],
+            index=X.index
+        )
+        
+        # Create Layer 2 features: L1 predictions + fundamental features
+        X_layer2 = pd.concat([l1_prob_df.reset_index(drop=True), 
+                              X_fundamental.reset_index(drop=True)], axis=1)
+        
+        self._feature_names_l2 = list(X_layer2.columns)
+        
+        # Train Layer 2: Meta-model
+        self._logger.info(f"Training Layer 2 with {len(X_layer2.columns)} meta-features...")
+        
+        if lgb:
+            self.layer2_model = lgb.LGBMClassifier(
+                n_estimators=200,
+                learning_rate=0.03,
+                max_depth=6,
+                num_leaves=31,
+                min_child_samples=15,
+                class_weight='balanced',
+                random_state=42,
+                verbose=-1,
+            )
+        else:
+            self.layer2_model = GradientBoostingClassifier(
+                n_estimators=100,
+                learning_rate=0.1,
+                max_depth=5,
+                random_state=42,
+            )
+        
+        self.layer2_model.fit(X_layer2.fillna(0), y.reset_index(drop=True))
+        
+        self._is_trained = True
+        
+        # Calculate metrics
+        y_pred = self.predict(X)
+        from sklearn.metrics import accuracy_score, f1_score
+        
+        metrics = {
+            'accuracy': accuracy_score(y, y_pred),
+            'f1_weighted': f1_score(y, y_pred, average='weighted'),
+            'layer1_features': len(X_technical.columns),
+            'layer2_features': len(X_layer2.columns),
+            'training_samples': len(X),
+        }
+        
+        self._logger.info(f"Training complete. Accuracy: {metrics['accuracy']:.2%}")
+        
+        return metrics
+    
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        """
+        Two-stage prediction.
+        
+        Args:
+            X: Full feature DataFrame
+            
+        Returns:
+            Predicted class labels
+        """
+        if not self.is_ready:
+            raise ValueError("Model not trained. Call train() first.")
+        
+        X_technical = self._get_technical_features(X)
+        X_fundamental = self._get_fundamental_features(X)
+        
+        # Layer 1 predictions
+        l1_probs = self.layer1_model.predict_proba(X_technical.fillna(0))
+        l1_prob_df = pd.DataFrame(
+            l1_probs,
+            columns=[f'l1_prob_{i}' for i in range(l1_probs.shape[1])],
+            index=X.index
+        )
+        
+        # Create Layer 2 input
+        X_layer2 = pd.concat([l1_prob_df.reset_index(drop=True),
+                              X_fundamental.reset_index(drop=True)], axis=1)
+        
+        # Layer 2 prediction
+        return self.layer2_model.predict(X_layer2.fillna(0))
+    
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        """Get probability predictions from Layer 2."""
+        if not self.is_ready:
+            raise ValueError("Model not trained. Call train() first.")
+        
+        X_technical = self._get_technical_features(X)
+        X_fundamental = self._get_fundamental_features(X)
+        
+        l1_probs = self.layer1_model.predict_proba(X_technical.fillna(0))
+        l1_prob_df = pd.DataFrame(
+            l1_probs,
+            columns=[f'l1_prob_{i}' for i in range(l1_probs.shape[1])],
+            index=X.index
+        )
+        
+        X_layer2 = pd.concat([l1_prob_df.reset_index(drop=True),
+                              X_fundamental.reset_index(drop=True)], axis=1)
+        
+        return self.layer2_model.predict_proba(X_layer2.fillna(0))
+    
+    def get_feature_importance(self) -> Dict[str, Dict[str, float]]:
+        """
+        Get feature importance from both layers.
+        
+        Returns:
+            Dictionary with 'layer1' and 'layer2' importance dictionaries
+        """
+        if not self.is_ready:
+            return {'layer1': {}, 'layer2': {}}
+        
+        result = {}
+        
+        # Layer 1 importance
+        try:
+            l1_importance = dict(zip(
+                self._feature_names_l1,
+                self.layer1_model.feature_importances_
+            ))
+            result['layer1'] = dict(sorted(
+                l1_importance.items(), 
+                key=lambda x: x[1], 
+                reverse=True
+            ))
+        except:
+            result['layer1'] = {}
+        
+        # Layer 2 importance
+        try:
+            l2_importance = dict(zip(
+                self._feature_names_l2,
+                self.layer2_model.feature_importances_
+            ))
+            result['layer2'] = dict(sorted(
+                l2_importance.items(),
+                key=lambda x: x[1],
+                reverse=True
+            ))
+        except:
+            result['layer2'] = {}
+        
+        return result
+    
+    def save(self, path: Path) -> bool:
+        """Save both layer models."""
+        import pickle
+        
+        try:
+            path = Path(path)
+            path.mkdir(parents=True, exist_ok=True)
+            
+            model_data = {
+                'layer1_model': self.layer1_model,
+                'layer2_model': self.layer2_model,
+                'feature_names_l1': self._feature_names_l1,
+                'feature_names_l2': self._feature_names_l2,
+                'n_classes': self.n_classes,
+            }
+            
+            with open(path / 'two_layer_ensemble.pkl', 'wb') as f:
+                pickle.dump(model_data, f)
+            
+            self._logger.info(f"Model saved to {path}")
+            return True
+            
+        except Exception as e:
+            self._logger.error(f"Failed to save model: {e}")
+            return False
+    
+    def load(self, path: Path) -> bool:
+        """Load both layer models."""
+        import pickle
+        
+        try:
+            model_file = Path(path) / 'two_layer_ensemble.pkl'
+            
+            if not model_file.exists():
+                return False
+            
+            with open(model_file, 'rb') as f:
+                model_data = pickle.load(f)
+            
+            self.layer1_model = model_data['layer1_model']
+            self.layer2_model = model_data['layer2_model']
+            self._feature_names_l1 = model_data['feature_names_l1']
+            self._feature_names_l2 = model_data['feature_names_l2']
+            self.n_classes = model_data.get('n_classes', 4)
+            self._is_trained = True
+            
+            self._logger.info(f"Model loaded from {path}")
+            return True
+            
+        except Exception as e:
+            self._logger.error(f"Failed to load model: {e}")
+            return False
+
+
 def create_ensemble_from_config(config_dict: Dict[str, Any]) -> MLEnsemble:
     """
     Create ensemble from configuration dictionary.

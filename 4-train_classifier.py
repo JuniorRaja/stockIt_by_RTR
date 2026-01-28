@@ -75,12 +75,91 @@ def load_stock_data(symbol: str):
         return None, None
 
 
-def analyze_stock_simple(symbol: str, prices_df: pd.DataFrame, info: dict):
+def calculate_forward_sharpe(prices: np.ndarray, forward_days: int = 90, 
+                             risk_free: float = 0.06) -> float:
     """
-    Simple analysis to generate features and labels.
-    Uses rule-based logic similar to the main app.
+    Calculate forward-looking Sharpe ratio as ML target.
+    
+    This shifts the ML target from "price prediction" to 
+    "risk-adjusted return prediction" which is more meaningful.
     """
-    if prices_df is None or prices_df.empty or len(prices_df) < 60:
+    if len(prices) < forward_days + 1:
+        return 0.0
+    
+    forward_returns = np.diff(prices[:forward_days + 1]) / prices[:forward_days]
+    
+    if len(forward_returns) < 20:
+        return 0.0
+    
+    annualized_return = np.mean(forward_returns) * 252
+    annualized_vol = np.std(forward_returns) * np.sqrt(252)
+    
+    if annualized_vol == 0 or np.isnan(annualized_vol):
+        return 0.0
+    
+    sharpe = (annualized_return - risk_free) / annualized_vol
+    return float(sharpe)
+
+
+def calculate_forward_sortino(prices: np.ndarray, forward_days: int = 90,
+                              risk_free: float = 0.06) -> float:
+    """
+    Calculate forward-looking Sortino ratio.
+    Sortino ratio only penalizes downside volatility.
+    """
+    if len(prices) < forward_days + 1:
+        return 0.0
+    
+    forward_returns = np.diff(prices[:forward_days + 1]) / prices[:forward_days]
+    
+    if len(forward_returns) < 20:
+        return 0.0
+    
+    annualized_return = np.mean(forward_returns) * 252
+    
+    downside_returns = forward_returns[forward_returns < 0]
+    if len(downside_returns) < 5:
+        return annualized_return
+    
+    downside_vol = np.std(downside_returns) * np.sqrt(252)
+    
+    if downside_vol == 0 or np.isnan(downside_vol):
+        return annualized_return
+    
+    sortino = (annualized_return - risk_free) / downside_vol
+    return float(sortino)
+
+
+def generate_risk_adjusted_label(sharpe: float, sortino: float = None) -> str:
+    """
+    Convert Sharpe/Sortino ratio to signal labels.
+    
+    This creates labels based on risk-adjusted returns rather than
+    just price movement or arbitrary rules.
+    """
+    effective_ratio = sharpe
+    if sortino is not None:
+        effective_ratio = (sharpe + sortino) / 2
+    
+    if effective_ratio >= 1.5:
+        return 'BUY'
+    elif effective_ratio >= 0.5:
+        return 'HOLD'
+    elif effective_ratio >= -0.5:
+        return 'AVOID'
+    else:
+        return 'SELL'
+
+
+def analyze_stock_simple(symbol: str, prices_df: pd.DataFrame, info: dict, 
+                         use_risk_adjusted: bool = True):
+    """
+    Analysis to generate features and labels.
+    Can use either rule-based or risk-adjusted (Sharpe/Sortino) labeling.
+    """
+    min_data_points = 150 if use_risk_adjusted else 60
+    
+    if prices_df is None or prices_df.empty or len(prices_df) < min_data_points:
         return None, None
     
     try:
@@ -88,43 +167,51 @@ def analyze_stock_simple(symbol: str, prices_df: pd.DataFrame, info: dict):
         if 'close' in prices_df.columns:
             prices = prices_df['close'].values
         else:
-            prices = prices_df.iloc[:, 3].values  # Assume 4th column is close
+            prices = prices_df.iloc[:, 3].values
         
-        if len(prices) < 60:
+        if len(prices) < min_data_points:
             return None, None
+        
+        # For risk-adjusted labels, use data split
+        if use_risk_adjusted and len(prices) >= 150:
+            feature_prices = prices[:-90]
+            forward_prices = prices[-91:]
+        else:
+            feature_prices = prices
+            forward_prices = None
         
         # Calculate features
         features = {}
         
         # Price-based features
-        features['return_1d'] = (prices[-1] / prices[-2] - 1) * 100 if len(prices) >= 2 else 0
-        features['return_5d'] = (prices[-1] / prices[-5] - 1) * 100 if len(prices) >= 5 else 0
-        features['return_20d'] = (prices[-1] / prices[-20] - 1) * 100 if len(prices) >= 20 else 0
-        features['return_60d'] = (prices[-1] / prices[-60] - 1) * 100 if len(prices) >= 60 else 0
-        features['return_252d'] = (prices[-1] / prices[-252] - 1) * 100 if len(prices) >= 252 else 0
+        features['return_1d'] = (feature_prices[-1] / feature_prices[-2] - 1) * 100 if len(feature_prices) >= 2 else 0
+        features['return_5d'] = (feature_prices[-1] / feature_prices[-5] - 1) * 100 if len(feature_prices) >= 5 else 0
+        features['return_20d'] = (feature_prices[-1] / feature_prices[-20] - 1) * 100 if len(feature_prices) >= 20 else 0
+        features['return_60d'] = (feature_prices[-1] / feature_prices[-60] - 1) * 100 if len(feature_prices) >= 60 else 0
+        features['return_252d'] = (feature_prices[-1] / feature_prices[-252] - 1) * 100 if len(feature_prices) >= 252 else 0
         
         # Volatility
-        returns = np.diff(prices) / prices[:-1]
+        returns = np.diff(feature_prices) / feature_prices[:-1]
         features['volatility_20d'] = np.std(returns[-20:]) * np.sqrt(252) * 100 if len(returns) >= 20 else 0
         features['volatility_60d'] = np.std(returns[-60:]) * np.sqrt(252) * 100 if len(returns) >= 60 else 0
         
         # Moving average ratios
-        sma_20 = np.mean(prices[-20:]) if len(prices) >= 20 else prices[-1]
-        sma_50 = np.mean(prices[-50:]) if len(prices) >= 50 else prices[-1]
-        sma_200 = np.mean(prices[-200:]) if len(prices) >= 200 else prices[-1]
-        features['sma_ratio_20'] = prices[-1] / sma_20 if sma_20 > 0 else 1
-        features['sma_ratio_50'] = prices[-1] / sma_50 if sma_50 > 0 else 1
-        features['sma_ratio_200'] = prices[-1] / sma_200 if sma_200 > 0 else 1
+        sma_20 = np.mean(feature_prices[-20:]) if len(feature_prices) >= 20 else feature_prices[-1]
+        sma_50 = np.mean(feature_prices[-50:]) if len(feature_prices) >= 50 else feature_prices[-1]
+        sma_200 = np.mean(feature_prices[-200:]) if len(feature_prices) >= 200 else feature_prices[-1]
+        features['sma_ratio_20'] = feature_prices[-1] / sma_20 if sma_20 > 0 else 1
+        features['sma_ratio_50'] = feature_prices[-1] / sma_50 if sma_50 > 0 else 1
+        features['sma_ratio_200'] = feature_prices[-1] / sma_200 if sma_200 > 0 else 1
         
         # 52-week high/low position
-        high_52w = info.get('fifty_two_week_high') or np.max(prices[-252:]) if len(prices) >= 252 else np.max(prices)
-        low_52w = info.get('fifty_two_week_low') or np.min(prices[-252:]) if len(prices) >= 252 else np.min(prices)
-        features['high_52w_pct'] = (prices[-1] / high_52w) if high_52w > 0 else 1
-        features['low_52w_pct'] = (prices[-1] / low_52w) if low_52w > 0 else 1
+        high_52w = info.get('fifty_two_week_high') or np.max(feature_prices[-252:]) if len(feature_prices) >= 252 else np.max(feature_prices)
+        low_52w = info.get('fifty_two_week_low') or np.min(feature_prices[-252:]) if len(feature_prices) >= 252 else np.min(feature_prices)
+        features['high_52w_pct'] = (feature_prices[-1] / high_52w) if high_52w > 0 else 1
+        features['low_52w_pct'] = (feature_prices[-1] / low_52w) if low_52w > 0 else 1
         
         # RSI
-        gains = np.maximum(np.diff(prices[-15:]), 0)
-        losses = np.abs(np.minimum(np.diff(prices[-15:]), 0))
+        gains = np.maximum(np.diff(feature_prices[-15:]), 0)
+        losses = np.abs(np.minimum(np.diff(feature_prices[-15:]), 0))
         avg_gain = np.mean(gains) if len(gains) > 0 else 0
         avg_loss = np.mean(losses) if len(losses) > 0 else 0.001
         rs = avg_gain / avg_loss if avg_loss > 0 else 100
@@ -136,65 +223,67 @@ def analyze_stock_simple(symbol: str, prices_df: pd.DataFrame, info: dict):
         features['dividend_yield'] = info.get('dividend_yield') or 0
         features['roe'] = info.get('roe') or 0
         features['debt_to_equity'] = info.get('debt_to_equity') or 0
-        features['market_cap'] = np.log10(info.get('market_cap', 1e9) + 1)  # Log scale
+        features['market_cap'] = np.log10(info.get('market_cap', 1e9) + 1)
         
-        # Generate label based on simple rules
-        score = 50  # Base score
-        
-        # Price momentum (30 points max)
-        if features['return_252d'] > 20:
-            score += 15
-        elif features['return_252d'] > 10:
-            score += 10
-        elif features['return_252d'] < -20:
-            score -= 15
-        elif features['return_252d'] < -10:
-            score -= 10
-        
-        if features['sma_ratio_200'] > 1.1:
-            score += 10
-        elif features['sma_ratio_200'] < 0.9:
-            score -= 10
-        
-        # Valuation (20 points max)
-        pe = features['pe_ratio']
-        if 0 < pe < 15:
-            score += 10
-        elif 15 <= pe < 25:
-            score += 5
-        elif pe > 40:
-            score -= 10
-        
-        # Quality (20 points max)
-        roe = features['roe']
-        if roe > 20:
-            score += 10
-        elif roe > 15:
-            score += 5
-        elif roe < 5:
-            score -= 5
-        
-        de = features['debt_to_equity']
-        if de is not None and de < 0.5:
-            score += 5
-        elif de is not None and de > 2:
-            score -= 10
-        
-        # Risk (volatility penalty)
-        if features['volatility_60d'] > 40:
-            score -= 10
-        elif features['volatility_60d'] > 30:
-            score -= 5
-        
-        # Determine signal (adjusted thresholds for balanced distribution)
-        if score >= 65:
-            label = "BUY"
-        elif score >= 45:
-            label = "HOLD"
-        elif score >= 30:
-            label = "AVOID"
+        # Generate label
+        if use_risk_adjusted and forward_prices is not None:
+            # Risk-adjusted labeling using Sharpe/Sortino
+            sharpe = calculate_forward_sharpe(forward_prices, forward_days=90)
+            sortino = calculate_forward_sortino(forward_prices, forward_days=90)
+            label = generate_risk_adjusted_label(sharpe, sortino)
         else:
-            label = "SELL"
+            # Fallback to rule-based
+            score = 50
+            
+            if features['return_252d'] > 20:
+                score += 15
+            elif features['return_252d'] > 10:
+                score += 10
+            elif features['return_252d'] < -20:
+                score -= 15
+            elif features['return_252d'] < -10:
+                score -= 10
+            
+            if features['sma_ratio_200'] > 1.1:
+                score += 10
+            elif features['sma_ratio_200'] < 0.9:
+                score -= 10
+            
+            pe = features['pe_ratio']
+            if 0 < pe < 15:
+                score += 10
+            elif 15 <= pe < 25:
+                score += 5
+            elif pe > 40:
+                score -= 10
+            
+            roe = features['roe']
+            if roe > 20:
+                score += 10
+            elif roe > 15:
+                score += 5
+            elif roe < 5:
+                score -= 5
+            
+            de = features['debt_to_equity']
+            if de is not None and de < 0.5:
+                score += 5
+            elif de is not None and de > 2:
+                score -= 10
+            
+            if features['volatility_60d'] > 40:
+                score -= 10
+            elif features['volatility_60d'] > 30:
+                score -= 5
+            
+            if score >= 65:
+                label = "BUY"
+            elif score >= 45:
+                label = "HOLD"
+            elif score >= 30:
+                label = "AVOID"
+            else:
+                label = "SELL"
         
         return features, label
         
@@ -283,17 +372,28 @@ def main():
     # Train classifier
     print("\n🔧 Training classifier...")
     
-    from sklearn.model_selection import train_test_split
+    from sklearn.model_selection import TimeSeriesSplit
     from sklearn.metrics import accuracy_score, f1_score
     
     # Encode labels
     label_map = {'BUY': 0, 'HOLD': 1, 'AVOID': 2, 'SELL': 3}
     y_encoded = y.map(label_map)
     
-    # Split
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded
-    )
+    # Walk-Forward Validation: Use time-series split to avoid look-ahead bias
+    print("   Using Walk-Forward Validation (time-series split)")
+    
+    X = X.sort_index()
+    y_encoded = y_encoded.reindex(X.index)
+    
+    tscv = TimeSeriesSplit(n_splits=5)
+    
+    for train_idx, test_idx in tscv.split(X):
+        pass  # Get last split
+    
+    X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+    y_train, y_test = y_encoded.iloc[train_idx], y_encoded.iloc[test_idx]
+    
+    print(f"   Train: {len(X_train)} samples, Test: {len(X_test)} samples")
     
     model = None
     model_type = "lightgbm"

@@ -109,8 +109,39 @@ class MarketBehaviourAnalyzer:
         return {'max_drawdown': max_dd, 'score': score}
     
     def _analyze_recovery(self, prices: pd.Series) -> Dict:
-        # Simplified recovery analysis
-        return {'avg_months': 12, 'score': 70}
+        """Analyze recovery time from drawdowns."""
+        try:
+            if len(prices) < 252:
+                return {'avg_months': None, 'score': 50}
+            
+            running_max = prices.expanding().max()
+            drawdown = (prices - running_max) / running_max
+            
+            in_drawdown = False
+            dd_start = None
+            recovery_times = []
+            
+            for i, (date, dd) in enumerate(drawdown.items()):
+                if not in_drawdown and dd < -0.20:
+                    in_drawdown = True
+                    dd_start = date
+                elif in_drawdown and dd >= -0.05:
+                    if dd_start is not None:
+                        recovery_days = (date - dd_start).days
+                        recovery_times.append(recovery_days / 30)
+                    in_drawdown = False
+                    dd_start = None
+            
+            if len(recovery_times) == 0:
+                return {'avg_months': None, 'score': 70}
+            
+            avg_months = float(np.mean(recovery_times))
+            score = 85 if avg_months < 6 else 70 if avg_months < 12 else 55 if avg_months < 18 else 40
+            
+            return {'avg_months': round(avg_months, 1), 'score': score}
+            
+        except Exception:
+            return {'avg_months': None, 'score': 50}
     
     def _analyze_volatility(self, df: pd.DataFrame, cutoff_date: datetime) -> Dict:
         df = df.sort_values('date').copy()
@@ -131,18 +162,135 @@ class MarketBehaviourAnalyzer:
         return {'annual_1y': vol_1y, 'annual_3y': vol_3y, 'regime': regime, 'score': score}
     
     def _calculate_beta(self, df: pd.DataFrame, nifty: Optional[pd.DataFrame], cutoff_date: datetime) -> Dict:
+        """Calculate stock beta relative to Nifty 50."""
         if nifty is None or nifty.empty:
             return {'beta': None, 'score': 50}
         
-        # Simplified beta estimation
-        return {'beta': 1.1, 'score': 70}
+        try:
+            stock_df = df.sort_values('date').copy()
+            stock_df['returns'] = stock_df['close'].pct_change()
+            
+            nifty_df = nifty.sort_values('date').copy()
+            if 'close' not in nifty_df.columns and 'Close' in nifty_df.columns:
+                nifty_df['close'] = nifty_df['Close']
+            nifty_df['market_returns'] = nifty_df['close'].pct_change()
+            
+            stock_df['date'] = pd.to_datetime(stock_df['date']).dt.date
+            nifty_df['date'] = pd.to_datetime(nifty_df['date']).dt.date
+            
+            merged = pd.merge(stock_df[['date', 'returns']], nifty_df[['date', 'market_returns']], on='date')
+            
+            one_year_ago = (cutoff_date - timedelta(days=365)).date()
+            merged = merged[merged['date'] >= one_year_ago].dropna()
+            
+            if len(merged) < 100:
+                return {'beta': None, 'score': 50}
+            
+            covariance = merged['returns'].cov(merged['market_returns'])
+            market_variance = merged['market_returns'].var()
+            
+            if market_variance == 0:
+                return {'beta': None, 'score': 50}
+            
+            beta = covariance / market_variance
+            
+            if beta < 0.5:
+                score = 75
+            elif beta <= 1.2:
+                score = 70
+            elif beta <= 1.5:
+                score = 55
+            else:
+                score = 35
+            
+            return {'beta': round(float(beta), 2), 'score': score}
+            
+        except Exception:
+            return {'beta': None, 'score': 50}
     
     def _analyze_relative(self, df: pd.DataFrame, nifty: Optional[pd.DataFrame], cutoff_date: datetime) -> Dict:
+        """Calculate relative performance vs Nifty 50."""
         if nifty is None or nifty.empty:
             return {'vs_nifty_1y': None, 'vs_nifty_3y': None, 'vs_nifty_5y': None, 'score': 50}
         
-        # Simplified relative performance
-        return {'vs_nifty_1y': 5, 'vs_nifty_3y': 15, 'vs_nifty_5y': 30, 'score': 70}
+        try:
+            stock_df = df.sort_values('date').copy()
+            nifty_df = nifty.sort_values('date').copy()
+            
+            if 'close' not in nifty_df.columns and 'Close' in nifty_df.columns:
+                nifty_df['close'] = nifty_df['Close']
+            
+            stock_df['date'] = pd.to_datetime(stock_df['date']).dt.date
+            nifty_df['date'] = pd.to_datetime(nifty_df['date']).dt.date
+            
+            result = {'vs_nifty_1y': None, 'vs_nifty_3y': None, 'vs_nifty_5y': None, 'score': 50}
+            
+            for years, key in [(1, 'vs_nifty_1y'), (3, 'vs_nifty_3y'), (5, 'vs_nifty_5y')]:
+                start_date = (cutoff_date - timedelta(days=years * 365)).date()
+                
+                stock_period = stock_df[stock_df['date'] >= start_date]
+                nifty_period = nifty_df[nifty_df['date'] >= start_date]
+                
+                if len(stock_period) < 100 or len(nifty_period) < 100:
+                    continue
+                
+                stock_return = (stock_period['close'].iloc[-1] / stock_period['close'].iloc[0] - 1) * 100
+                nifty_return = (nifty_period['close'].iloc[-1] / nifty_period['close'].iloc[0] - 1) * 100
+                
+                result[key] = round(stock_return - nifty_return, 1)
+            
+            outperformance = result['vs_nifty_1y'] or result['vs_nifty_3y'] or 0
+            
+            if outperformance >= 20:
+                result['score'] = 90
+            elif outperformance >= 10:
+                result['score'] = 75
+            elif outperformance >= 0:
+                result['score'] = 60
+            elif outperformance >= -10:
+                result['score'] = 45
+            else:
+                result['score'] = 30
+            
+            return result
+            
+        except Exception:
+            return {'vs_nifty_1y': None, 'vs_nifty_3y': None, 'vs_nifty_5y': None, 'score': 50}
+    
+    def detect_market_regime(self, nifty_prices: pd.Series, lookback: int = 200) -> str:
+        """Detect current market regime (Bull/Bear/Sideways)."""
+        if len(nifty_prices) < lookback:
+            return 'sideways'
+        
+        try:
+            sma_50 = nifty_prices.rolling(50).mean()
+            sma_200 = nifty_prices.rolling(200).mean()
+            
+            current_price = nifty_prices.iloc[-1]
+            current_sma50 = sma_50.iloc[-1]
+            current_sma200 = sma_200.iloc[-1]
+            
+            if pd.isna(current_sma200):
+                return 'sideways'
+            
+            if current_price > current_sma50 > current_sma200:
+                return 'bull'
+            elif current_price < current_sma50 < current_sma200:
+                return 'bear'
+            return 'sideways'
+            
+        except Exception:
+            return 'sideways'
+    
+    @staticmethod
+    def get_regime_rsi_thresholds(regime: str) -> Dict[str, int]:
+        """Get dynamic RSI thresholds based on market regime."""
+        thresholds = {
+            'bull': {'oversold': 40, 'overbought': 80},
+            'bear': {'oversold': 20, 'overbought': 60},
+            'sideways': {'oversold': 30, 'overbought': 70}
+        }
+        return thresholds.get(regime, thresholds['sideways'])
     
     def _calculate_sharpe(self, df: pd.DataFrame, cutoff_date: datetime, risk_free: float = 6.0) -> Optional[float]:
         try:

@@ -40,7 +40,7 @@ def render_user_profile() -> Dict[str, Any]:
     
     tenure = st.slider(
         "Holding Period (Years)", 
-        min_value=1, max_value=15, value=5,
+        min_value=1, max_value=60, value=5,
         help="How long you plan to hold"
     )
     

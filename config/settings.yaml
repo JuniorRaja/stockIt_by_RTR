@@ -105,17 +105,52 @@ ml_config:
     learning_rate: 0.05
     max_depth: 6
     min_samples_for_training: 100
+    use_walk_forward: true
+    walk_forward_splits: 5
+    use_risk_adjusted_target: true
   explainer:
     model: null
     context_length: 2048
     temperature: 0.7
+    use_shap: true
+  ensemble:
+    use_two_layer: true
   ml_weight_in_composite: 0.15
   features:
     include_technical: true
     include_forecast: true
+    include_macro: true
   model_type: xgboost
   n_clusters: 8
   min_samples_for_training: 100
+
+macro_config:
+  enabled: true
+  cache_dir: data/macro
+  sources:
+    repo_rate: rbi_dbie
+    usdinr: yahoo_finance
+    crude_oil: fred_api
+  rsi_thresholds:
+    bull:
+      oversold: 40
+      overbought: 80
+    bear:
+      oversold: 20
+      overbought: 60
+    sideways:
+      oversold: 30
+      overbought: 70
+
+survivorship_bias:
+  enabled: true
+  include_delisted: true
+  delisted_data_dir: data/delisted
+
+inflation_adjustment:
+  enabled: true
+  use_log_returns: true
+  use_cpi_adjustment: true
 time_travel:
   min_year: 2005
   available_cutoffs:
