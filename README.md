@@ -13,23 +13,26 @@ git clone https://github.com/your-repo/indian-equity-intelligence.git
 cd indian-equity-intelligence
 ```
 
-### 2. Install Requirements
+### 2. Setup
 
 ```bash
-# Create virtual environment (recommended)
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
+python 1-setup.py
 ```
+This installs dependencies and sets up the environment.
 
-### 3. Download ML Models
+### 3. Download Data
+
+```bash
+python 2-download_all_stocks.py
+```
+This downloads historical data for ~2,200 stocks.
+
+### 4. Download ML Models
 
 Run the interactive model downloader to choose models based on your PC specs:
 
 ```bash
-python download_models.py
+python 3-download_models.py
 ```
 
 **Choose a preset based on your hardware:**
@@ -40,12 +43,12 @@ python download_models.py
 | 💻 **Standard** | 8-16GB | Chronos-T5-Small + LightGBM + Qwen2.5-3B |
 | 🪶 **Lite** | 4-8GB | Chronos-T5-Tiny + LightGBM (no LLM) |
 
-### 4. Train the Classifier
+### 5. Train the Classifier
 
 Train the LightGBM classifier using the pre-downloaded stock data:
 
 ```bash
-python train_classifier.py
+python 4-train_classifier.py
 ```
 
 This uses the **2,200+ stocks** in the `data/` directory — no internet needed!
@@ -61,7 +64,7 @@ This uses the **2,200+ stocks** in the `data/` directory — no internet needed!
 💾 Model saved to: models/classifier/lightgbm/model.pkl
 ```
 
-### 5. Run the Application
+### 6. Run the Application
 
 ```bash
 streamlit run app.py

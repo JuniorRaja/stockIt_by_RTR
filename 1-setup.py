@@ -63,13 +63,13 @@ def check_dependencies():
         return False
     
     # Check optional
-    optional = {'jugaad_data': 'jugaad-data', 'feedparser': 'feedparser'}
-    for module, package in optional.items():
-        try:
-            __import__(module)
-            print(f"✓ {package} (optional)")
-        except ImportError:
-            print(f"○ {package} (optional, not installed)")
+    # optional = {'jugaad_data': 'jugaad-data'}
+    # for module, package in optional.items():
+    #     try:
+    #         __import__(module)
+    #         print(f"✓ {package} (optional)")
+    #     except ImportError:
+    #         print(f"○ {package} (optional, not installed)")
     
     print("✓ All required dependencies installed")
     return True

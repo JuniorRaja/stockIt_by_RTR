@@ -7,76 +7,30 @@ streamlit>=1.28.0
 # Data Sources
 yfinance>=0.2.31
 nsetools>=1.0.11
-
-# Optional: Jugaad Data for additional NSE historical data
-# Install separately after main requirements to avoid conflicts:
-# pip install jugaad-data --no-deps
-# jugaad-data>=0.24  # Commented due to beautifulsoup4 conflict
+# jugaad-data>=0.24  # Optional
 
 # Data Processing
 pandas>=2.0.0
 numpy>=1.24.0
-pyarrow>=14.0.0  # For Parquet support
-
-# Database
+pyarrow>=14.0.0
 duckdb>=0.9.0
 
-# ================================
-# Machine Learning - Core
-# ================================
+# Machine Learning
 scikit-learn>=1.3.0
-xgboost>=2.0.0
-torch>=2.0.0  # PyTorch for ML models
-
-# ================================
-# Layer 1: Time-Series Forecasters
-# ================================
-# Chronos-T5 (Amazon's time-series foundation model)
-# Install with: pip install chronos-forecasting
-chronos-forecasting>=1.0.0
-
-# Lag-Llama (Alternative probabilistic forecaster)
-# Optional - install separately if needed:
-# pip install lag-llama gluonts
-
-# ================================
-# Layer 2: Gradient Boosting Classifiers
-# ================================
 lightgbm>=4.0.0
 catboost>=1.2.0
+torch>=2.0.0
+chronos-forecasting>=1.0.0
 
-# ================================
-# Layer 3: LLM Explainer
-# ================================
-# llama-cpp-python for running GGUF models locally
-# For CPU only:
-#   pip install llama-cpp-python
-# For CUDA GPU:
-#   CMAKE_ARGS="-DLLAMA_CUDA=on" pip install llama-cpp-python
-# For Apple Silicon (Metal):
-#   CMAKE_ARGS="-DLLAMA_METAL=on" pip install llama-cpp-python
+# LLM
 llama-cpp-python>=0.2.0
-
-# HuggingFace for model downloads
 huggingface_hub>=0.19.0
-transformers>=4.36.0
 
-# ================================
 # Visualization
-# ================================
 plotly>=5.18.0
-matplotlib>=3.8.0
-
-# Configuration
-pyyaml>=6.0.1
 
 # Utilities
+pyyaml>=6.0.1
 requests>=2.31.0
-feedparser>=6.0.10  # For RSS feeds
-python-dateutil>=2.8.2
-tqdm>=4.66.0  # Progress bars
-beautifulsoup4>=4.11.1  # Web scraping
-psutil>=5.9.0  # System monitoring
-
-# Optional: For better async performance
-aiohttp>=3.9.0
+tqdm>=4.66.0
+psutil>=5.9.0
