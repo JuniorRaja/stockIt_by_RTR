@@ -33,6 +33,8 @@ class FinancialScore:
     details: Dict[str, Any]
     warnings: List[str]
     red_flags: List[str]
+    investable: bool
+    investable_reasons: List[str]
 
 
 class FinancialAnalyzer:
@@ -86,6 +88,21 @@ class FinancialAnalyzer:
         # Margins
         margins = self._analyze_margins(income_stmt)
         details['margins'] = margins
+
+        # Investable universe filter (e.g., positive cash flow for 5+ years)
+        investable_reasons = []
+        min_positive_fcf_years = get_threshold('financial', 'min_positive_fcf_years', 5)
+        min_earnings_quality = get_threshold('financial', 'min_earnings_quality', 0.6)
+        if cashflow.get('has_cashflow'):
+            if cashflow.get('positive_fcf_years', 0) < min_positive_fcf_years:
+                investable_reasons.append(
+                    f"Positive FCF only {cashflow.get('positive_fcf_years', 0)} of last {min_positive_fcf_years} years"
+                )
+            if cashflow.get('earnings_quality', 0) < min_earnings_quality:
+                investable_reasons.append(
+                    f"Earnings quality below {min_earnings_quality:.0%}"
+                )
+        investable = len(investable_reasons) == 0
         
         overall_score = self._calculate_score(revenue['score'], profit['score'], roce['score'],
                                                cashflow['score'], leverage['score'], margins['score'])
@@ -98,7 +115,8 @@ class FinancialAnalyzer:
             roce_consistency=roce['consistency'], fcf_yield=cashflow['fcf_yield'],
             earnings_quality=cashflow['earnings_quality'],
             debt_to_equity=leverage['debt_to_equity'], margin_trend=margins['trend'],
-            details=details, warnings=warnings, red_flags=red_flags
+            details=details, warnings=warnings, red_flags=red_flags,
+            investable=investable, investable_reasons=investable_reasons
         )
     
     def _analyze_revenue(self, income_stmt: pd.DataFrame) -> Dict:
@@ -310,9 +328,17 @@ class FinancialAnalyzer:
         return min(100, max(0, score))
     
     def _analyze_cashflow(self, cash_flow: pd.DataFrame, income_stmt: pd.DataFrame, stock_info: Dict) -> Dict:
-        result = {'fcf_yield': None, 'earnings_quality': 1.0, 'negative_fcf_years': 0, 'score': 50}
+        result = {
+            'fcf_yield': None,
+            'earnings_quality': 1.0,
+            'negative_fcf_years': 0,
+            'positive_fcf_years': 0,
+            'has_cashflow': False,
+            'score': 50
+        }
         if cash_flow.empty:
             return result
+        result['has_cashflow'] = True
         
         cfo_cols = ['Operating Cash Flow', 'Cash From Operating Activities']
         cfo = None
@@ -321,10 +347,62 @@ class FinancialAnalyzer:
                 cfo = cash_flow[col]
                 break
         
-        if cfo is not None:
-            result['negative_fcf_years'] = int((cfo < 0).sum())
-        
-        result['score'] = 70 if result['negative_fcf_years'] < 2 else 50 if result['negative_fcf_years'] < 3 else 30
+        capex_cols = [
+            'Capital Expenditure', 'Capital Expenditures', 'Purchase Of Property Plant Equipment',
+            'CAPEX'
+        ]
+        capex = None
+        for col in capex_cols:
+            if col in cash_flow.columns:
+                capex = cash_flow[col]
+                break
+
+        if cfo is not None and capex is not None:
+            common_idx = cfo.index.intersection(capex.index)
+            if len(common_idx) > 0:
+                fcf_series = (cfo.loc[common_idx] - capex.loc[common_idx]).dropna().sort_index()
+                if not fcf_series.empty:
+                    result['negative_fcf_years'] = int((fcf_series < 0).sum())
+                    recent = fcf_series.tail(5) if len(fcf_series) >= 5 else fcf_series
+                    result['positive_fcf_years'] = int((recent > 0).sum())
+
+                    market_cap = stock_info.get('market_cap') or 0
+                    if market_cap > 0:
+                        result['fcf_yield'] = round(float(fcf_series.iloc[-1]) / market_cap * 100, 2)
+
+        # Earnings quality: CFO / PAT
+        pat_cols = ['Net Income', 'Profit After Tax', 'PAT', 'Net Profit']
+        pat = None
+        for col in pat_cols:
+            if col in income_stmt.columns:
+                pat = income_stmt[col]
+                break
+        if cfo is not None and pat is not None:
+            common_idx = cfo.index.intersection(pat.index)
+            if len(common_idx) > 0:
+                ratio = cfo.loc[common_idx] / pat.loc[common_idx].replace(0, np.nan)
+                ratio = ratio.replace([np.inf, -np.inf], np.nan).dropna().sort_index()
+                if not ratio.empty:
+                    result['earnings_quality'] = float(round(ratio.tail(3).mean(), 2))
+
+        score = 50.0
+        if result['fcf_yield'] is not None:
+            if result['fcf_yield'] >= get_threshold('financial', 'min_fcf_yield', 2.0) * 2:
+                score += 20
+            elif result['fcf_yield'] >= get_threshold('financial', 'min_fcf_yield', 2.0):
+                score += 10
+            elif result['fcf_yield'] < 0:
+                score -= 15
+        if result['earnings_quality'] >= 1.0:
+            score += 10
+        elif result['earnings_quality'] >= 0.8:
+            score += 5
+        elif result['earnings_quality'] < 0.5:
+            score -= 15
+        if result['negative_fcf_years'] >= 3:
+            score -= 20
+
+        result['score'] = min(100, max(0, score))
         return result
     
     def _analyze_leverage(self, balance_sheet: pd.DataFrame) -> Dict:

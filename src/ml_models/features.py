@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 
+from ..utils.config import get_macro_rsi_thresholds
+
 logger = logging.getLogger(__name__)
 
 
@@ -46,6 +48,7 @@ class FeatureEngineer:
     # Standard feature list
     PRICE_FEATURES = [
         "return_1d", "return_5d", "return_20d", "return_60d", "return_252d",
+        "log_return_252d", "real_return_252d",
         "volatility_20d", "volatility_60d",
         "momentum_10d", "momentum_30d",
         "sma_ratio_20", "sma_ratio_50", "sma_ratio_200",
@@ -163,7 +166,10 @@ class FeatureEngineer:
         features = {}
         
         # Price features
-        price_features = self._extract_price_features(prices)
+        cpi_index = None
+        if macro_data is not None:
+            cpi_index = macro_data.get('cpi_index')
+        price_features = self._extract_price_features(prices, cpi_index=cpi_index)
         features.update(price_features)
         
         # Technical features
@@ -187,6 +193,7 @@ class FeatureEngineer:
             macro_features = self._extract_macro_features(macro_data, prices)
             features.update(macro_features)
         
+        features = self._sanitize_features(features)
         return FeatureSet(
             symbol=symbol,
             features=features,
@@ -197,8 +204,22 @@ class FeatureEngineer:
                 "market_regime": self._market_regime,
             }
         )
+
+    def _sanitize_features(self, features: Dict[str, Any]) -> Dict[str, float]:
+        """Coerce all feature values to floats, defaulting non-numerics to 0."""
+        sanitized: Dict[str, float] = {}
+        for name in self.feature_names:
+            value = features.get(name, 0.0)
+            try:
+                if value is None or (isinstance(value, float) and np.isnan(value)):
+                    sanitized[name] = 0.0
+                else:
+                    sanitized[name] = float(value)
+            except Exception:
+                sanitized[name] = 0.0
+        return sanitized
     
-    def _extract_price_features(self, prices: pd.Series) -> Dict[str, float]:
+    def _extract_price_features(self, prices: pd.Series, cpi_index: Optional[pd.DataFrame] = None) -> Dict[str, float]:
         """Extract price-based features."""
         features = {}
         
@@ -214,9 +235,38 @@ class FeatureEngineer:
                 features[f"return_{name}"] = (current - past) / past if past != 0 else 0.0
             else:
                 features[f"return_{name}"] = 0.0
+
+        # Log returns (long-horizon stability)
+        if len(prices) > 252:
+            past = prices.iloc[-253]
+            if past > 0 and current > 0:
+                features["log_return_252d"] = float(np.log(current / past))
+            else:
+                features["log_return_252d"] = 0.0
+        else:
+            features["log_return_252d"] = 0.0
+
+        # Inflation-adjusted return (if CPI index available)
+        features["real_return_252d"] = 0.0
+        if cpi_index is not None and not isinstance(cpi_index, (int, float)):
+            cpi_series = cpi_index
+            if isinstance(cpi_index, pd.DataFrame):
+                cpi_series = cpi_index['cpi_index'] if 'cpi_index' in cpi_index.columns else cpi_index.iloc[:, 0]
+            if isinstance(cpi_series, pd.Series) and not cpi_series.empty:
+                cpi_series = cpi_series.copy()
+                cpi_series.index = pd.to_datetime(cpi_series.index)
+                price_series = prices.copy()
+                price_series.index = pd.to_datetime(price_series.index)
+                aligned_cpi = cpi_series.reindex(price_series.index, method='ffill')
+                real_prices = price_series / (aligned_cpi / 100)
+                if len(real_prices.dropna()) > 252:
+                    real_current = real_prices.iloc[-1]
+                    real_past = real_prices.iloc[-253]
+                    if real_past and real_past != 0:
+                        features["real_return_252d"] = float((real_current - real_past) / real_past)
         
         # Volatility (annualized)
-        returns = prices.pct_change().dropna()
+        returns = prices.pct_change(fill_method=None).dropna()
         for period, name in [(20, "20d"), (60, "60d")]:
             if len(returns) >= period:
                 features[f"volatility_{name}"] = returns.tail(period).std() * np.sqrt(252)
@@ -347,7 +397,7 @@ class FeatureEngineer:
     def _calculate_adx(self, prices: pd.Series, period: int = 14) -> float:
         """Calculate ADX (simplified directional movement indicator)."""
         # Simplified: Use absolute momentum as proxy
-        returns = prices.pct_change()
+        returns = prices.pct_change(fill_method=None)
         abs_returns = returns.abs()
         
         # Directional movement
@@ -392,10 +442,13 @@ class FeatureEngineer:
             features["revenue_cagr_5y"] = getattr(fin, 'revenue_cagr_5y', 0) or 0
             features["pat_cagr_3y"] = getattr(fin, 'pat_cagr_3y', 0) or 0
             features["pat_cagr_5y"] = getattr(fin, 'pat_cagr_5y', 0) or 0
-            features["roce"] = getattr(fin, 'roce', 0) or 0
+            features["roce"] = getattr(fin, 'roce_current', 0) or 0
             features["fcf_yield"] = getattr(fin, 'fcf_yield', 0) or 0
             features["debt_to_equity"] = getattr(fin, 'debt_to_equity', 0) or 0
-            features["operating_margin"] = getattr(fin, 'operating_margin', 0) or 0
+            features["operating_margin"] = (
+                fin.details.get('margins', {}).get('opm_current')
+                if getattr(fin, 'details', None) else 0
+            ) or 0
             features["earnings_quality"] = getattr(fin, 'earnings_quality', 0) or 0
             features["financial_score"] = getattr(fin, 'overall_score', 50)
         else:
@@ -407,10 +460,10 @@ class FeatureEngineer:
         # Valuation features
         if valuation_result:
             val = valuation_result
-            features["pe_ratio"] = getattr(val, 'pe_ratio', 0) or 0
-            features["pe_percentile"] = getattr(val, 'pe_percentile', 50) or 50
-            features["pb_ratio"] = getattr(val, 'pb_ratio', 0) or 0
-            features["pb_percentile"] = getattr(val, 'pb_percentile', 50) or 50
+            features["pe_ratio"] = getattr(val, 'current_pe', 0) or 0
+            features["pe_percentile"] = getattr(val, 'pe_percentile_own', 50) or 50
+            features["pb_ratio"] = getattr(val, 'current_pb', 0) or 0
+            features["pb_percentile"] = getattr(val, 'pb_percentile_own', 50) or 50
             features["ev_ebitda"] = getattr(val, 'ev_ebitda', 0) or 0
             features["peg_ratio"] = getattr(val, 'peg_ratio', 0) or 0
             features["valuation_score"] = getattr(val, 'overall_score', 50)
@@ -430,7 +483,7 @@ class FeatureEngineer:
             features["volatility_3y"] = getattr(mkt, 'volatility_3y', 0) or 0
             features["beta"] = getattr(mkt, 'beta', 1) or 1
             features["sharpe_ratio"] = getattr(mkt, 'sharpe_ratio', 0) or 0
-            features["relative_performance_1y"] = getattr(mkt, 'relative_performance_1y', 0) or 0
+            features["relative_performance_1y"] = getattr(mkt, 'vs_nifty_1y', 0) or 0
             features["market_score"] = getattr(mkt, 'overall_score', 50)
         else:
             for name in ["max_drawdown", "avg_recovery_months", "volatility_1y", 
@@ -597,11 +650,7 @@ class FeatureEngineer:
         In bull markets, RSI can stay overbought longer.
         In bear markets, oversold conditions can persist.
         """
-        thresholds = {
-            'bull': {'oversold': 40, 'overbought': 80},
-            'bear': {'oversold': 20, 'overbought': 60},
-            'sideways': {'oversold': 30, 'overbought': 70}
-        }
+        thresholds = get_macro_rsi_thresholds()
         return thresholds.get(regime, thresholds['sideways'])
     
     def set_market_regime(self, regime: str):

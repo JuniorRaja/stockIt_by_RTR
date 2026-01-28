@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass
 import logging
 
-from ..utils.config import get_threshold
+from ..utils.config import get_threshold, get_macro_rsi_thresholds
 from ..utils.helpers import calculate_max_drawdown, calculate_volatility
 
 logger = logging.getLogger(__name__)
@@ -145,7 +145,7 @@ class MarketBehaviourAnalyzer:
     
     def _analyze_volatility(self, df: pd.DataFrame, cutoff_date: datetime) -> Dict:
         df = df.sort_values('date').copy()
-        df['returns'] = df['close'].pct_change()
+        df['returns'] = self._calculate_log_returns(df['close'])
         
         one_year_ago = cutoff_date - timedelta(days=365)
         df_1y = df[df['date'] >= one_year_ago]
@@ -168,12 +168,12 @@ class MarketBehaviourAnalyzer:
         
         try:
             stock_df = df.sort_values('date').copy()
-            stock_df['returns'] = stock_df['close'].pct_change()
+            stock_df['returns'] = self._calculate_log_returns(stock_df['close'])
             
             nifty_df = nifty.sort_values('date').copy()
             if 'close' not in nifty_df.columns and 'Close' in nifty_df.columns:
                 nifty_df['close'] = nifty_df['Close']
-            nifty_df['market_returns'] = nifty_df['close'].pct_change()
+            nifty_df['market_returns'] = self._calculate_log_returns(nifty_df['close'])
             
             stock_df['date'] = pd.to_datetime(stock_df['date']).dt.date
             nifty_df['date'] = pd.to_datetime(nifty_df['date']).dt.date
@@ -285,17 +285,19 @@ class MarketBehaviourAnalyzer:
     @staticmethod
     def get_regime_rsi_thresholds(regime: str) -> Dict[str, int]:
         """Get dynamic RSI thresholds based on market regime."""
-        thresholds = {
-            'bull': {'oversold': 40, 'overbought': 80},
-            'bear': {'oversold': 20, 'overbought': 60},
-            'sideways': {'oversold': 30, 'overbought': 70}
-        }
+        thresholds = get_macro_rsi_thresholds()
         return thresholds.get(regime, thresholds['sideways'])
+
+    @staticmethod
+    def _calculate_log_returns(prices: pd.Series) -> pd.Series:
+        """Calculate log returns for long-horizon stability."""
+        returns = np.log(prices / prices.shift(1))
+        return returns.replace([np.inf, -np.inf], np.nan).dropna()
     
     def _calculate_sharpe(self, df: pd.DataFrame, cutoff_date: datetime, risk_free: float = 6.0) -> Optional[float]:
         try:
             df = df.sort_values('date').copy()
-            df['returns'] = df['close'].pct_change()
+            df['returns'] = self._calculate_log_returns(df['close'])
             one_year_ago = cutoff_date - timedelta(days=365)
             df_1y = df[df['date'] >= one_year_ago]
             if len(df_1y) < 100:

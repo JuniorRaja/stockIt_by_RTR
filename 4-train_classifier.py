@@ -20,56 +20,132 @@ import numpy as np
 import json
 import logging
 from datetime import datetime, timedelta
+from dataclasses import dataclass
+from typing import Optional, Dict, Any, List, Tuple
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
+
+from src.ml_models.features import FeatureEngineer
+from src.data.macro import get_macro_provider
+from scripts.download_delisted_stocks import DelistedStockProvider
 
 # Directories
 DATA_DIR = Path("data")
 PRICES_DIR = DATA_DIR / "prices"
 INFO_DIR = DATA_DIR / "stock_info"
 MODELS_DIR = Path("models")
+DELISTED_DIR = DATA_DIR / "delisted"
+
+
+def _find_delisted_price_files() -> Dict[str, Path]:
+    if not DELISTED_DIR.exists():
+        return {}
+    price_files = {}
+    for pattern in ["*.parquet", "*.csv"]:
+        for f in DELISTED_DIR.rglob(pattern):
+            price_files[f.stem] = f
+    return price_files
+
+
+def _find_delisted_info_files() -> Dict[str, Path]:
+    if not DELISTED_DIR.exists():
+        return {}
+    info_files = {}
+    for f in DELISTED_DIR.rglob("*.json"):
+        info_files[f.stem] = f
+    return info_files
 
 
 def get_available_stocks():
-    """Get list of stocks that have both price and info data."""
-    price_files = set(f.stem for f in PRICES_DIR.glob("*.parquet"))
-    info_files = set(f.stem for f in INFO_DIR.glob("*.json"))
-    return sorted(price_files & info_files)
+    """Get list of active + delisted stocks with price data."""
+    active_price_files = set(f.stem for f in PRICES_DIR.glob("*.parquet"))
+    active_info_files = set(f.stem for f in INFO_DIR.glob("*.json"))
+    active = active_price_files & active_info_files
+
+    delisted_prices = set(_find_delisted_price_files().keys())
+
+    return sorted(active | delisted_prices)
 
 
 def load_stock_data(symbol: str):
-    """Load price and info data for a stock."""
+    """Load price and info data for a stock (active or delisted)."""
     try:
-        # Load prices
+        prices_df = None
+        info = None
+
+        # Load active prices
         price_file = PRICES_DIR / f"{symbol}.parquet"
-        prices_df = pd.read_parquet(price_file)
-        prices_df['date'] = pd.to_datetime(prices_df['date'])
-        
-        # Load info
+        if price_file.exists():
+            prices_df = pd.read_parquet(price_file)
+            prices_df['date'] = pd.to_datetime(prices_df['date'])
+
+        # Load active info
         info_file = INFO_DIR / f"{symbol}.json"
-        with open(info_file) as f:
-            raw_info = json.load(f)
-        
-        # Normalize info
-        info = {
-            'symbol': symbol,
-            'name': raw_info.get('longName', raw_info.get('shortName', symbol)),
-            'sector': raw_info.get('sector', 'Unknown'),
-            'industry': raw_info.get('industry', 'Unknown'),
-            'market_cap': raw_info.get('marketCap', 0),
-            'current_price': raw_info.get('currentPrice', raw_info.get('regularMarketPrice', 0)),
-            'pe_ratio': raw_info.get('trailingPE'),
-            'pb_ratio': raw_info.get('priceToBook'),
-            'dividend_yield': (raw_info.get('dividendYield', 0) or 0) * 100,
-            'eps': raw_info.get('trailingEps'),
-            'book_value': raw_info.get('bookValue'),
-            'roe': (raw_info.get('returnOnEquity') or 0) * 100 if raw_info.get('returnOnEquity') else None,
-            'debt_to_equity': raw_info.get('debtToEquity'),
-            'fifty_two_week_high': raw_info.get('fiftyTwoWeekHigh'),
-            'fifty_two_week_low': raw_info.get('fiftyTwoWeekLow'),
-        }
-        
+        if info_file.exists():
+            with open(info_file) as f:
+                raw_info = json.load(f)
+            info = {
+                'symbol': symbol,
+                'name': raw_info.get('longName', raw_info.get('shortName', symbol)),
+                'sector': raw_info.get('sector', 'Unknown'),
+                'industry': raw_info.get('industry', 'Unknown'),
+                'market_cap': raw_info.get('marketCap', 0),
+                'current_price': raw_info.get('currentPrice', raw_info.get('regularMarketPrice', 0)),
+                'pe_ratio': raw_info.get('trailingPE'),
+                'pb_ratio': raw_info.get('priceToBook'),
+                'dividend_yield': (raw_info.get('dividendYield', 0) or 0) * 100,
+                'eps': raw_info.get('trailingEps'),
+                'book_value': raw_info.get('bookValue'),
+                'roe': (raw_info.get('returnOnEquity') or 0) * 100 if raw_info.get('returnOnEquity') else None,
+                'debt_to_equity': raw_info.get('debtToEquity'),
+                'fifty_two_week_high': raw_info.get('fiftyTwoWeekHigh'),
+                'fifty_two_week_low': raw_info.get('fiftyTwoWeekLow'),
+            }
+
+        # Load delisted prices if active not found
+        if prices_df is None:
+            delisted_prices = _find_delisted_price_files()
+            delisted_file = delisted_prices.get(symbol)
+            if delisted_file:
+                if delisted_file.suffix == ".parquet":
+                    prices_df = pd.read_parquet(delisted_file)
+                else:
+                    prices_df = pd.read_csv(delisted_file)
+                if 'date' in prices_df.columns:
+                    prices_df['date'] = pd.to_datetime(prices_df['date'])
+                else:
+                    prices_df['date'] = pd.to_datetime(prices_df.iloc[:, 0])
+
+        # Load delisted info if active not found
+        if info is None:
+            delisted_info = _find_delisted_info_files().get(symbol)
+            if delisted_info:
+                with open(delisted_info) as f:
+                    raw_info = json.load(f)
+                info = {
+                    'symbol': symbol,
+                    'name': raw_info.get('name', symbol),
+                    'sector': raw_info.get('sector', 'Unknown'),
+                    'industry': raw_info.get('industry', 'Unknown'),
+                    'market_cap': raw_info.get('market_cap', 0),
+                    'current_price': raw_info.get('last_known_price', 0),
+                    'pe_ratio': raw_info.get('pe_ratio'),
+                    'pb_ratio': raw_info.get('pb_ratio'),
+                    'dividend_yield': raw_info.get('dividend_yield'),
+                    'eps': raw_info.get('eps'),
+                    'book_value': raw_info.get('book_value'),
+                    'roe': raw_info.get('roe'),
+                    'debt_to_equity': raw_info.get('debt_to_equity'),
+                    'fifty_two_week_high': raw_info.get('peak_price'),
+                    'fifty_two_week_low': raw_info.get('low_price'),
+                }
+
+        if prices_df is None:
+            return None, None
+
+        if info is None:
+            info = {'symbol': symbol}
         return prices_df, info
     except Exception as e:
         return None, None
@@ -151,145 +227,124 @@ def generate_risk_adjusted_label(sharpe: float, sortino: float = None) -> str:
         return 'SELL'
 
 
-def analyze_stock_simple(symbol: str, prices_df: pd.DataFrame, info: dict, 
-                         use_risk_adjusted: bool = True):
-    """
-    Analysis to generate features and labels.
-    Can use either rule-based or risk-adjusted (Sharpe/Sortino) labeling.
-    """
-    min_data_points = 150 if use_risk_adjusted else 60
-    
-    if prices_df is None or prices_df.empty or len(prices_df) < min_data_points:
-        return None, None
-    
-    try:
-        # Get price series
-        if 'close' in prices_df.columns:
-            prices = prices_df['close'].values
+@dataclass
+class ProxyFinancialResult:
+    revenue_cagr_3y: float = 0.0
+    revenue_cagr_5y: float = 0.0
+    pat_cagr_3y: float = 0.0
+    pat_cagr_5y: float = 0.0
+    roce_current: float = 0.0
+    fcf_yield: float = 0.0
+    debt_to_equity: float = 0.0
+    earnings_quality: float = 0.0
+    overall_score: float = 50.0
+    details: dict = None
+
+
+@dataclass
+class ProxyValuationResult:
+    current_pe: float = 0.0
+    pe_percentile_own: float = 50.0
+    current_pb: float = 0.0
+    pb_percentile_own: float = 50.0
+    ev_ebitda: float = 0.0
+    peg_ratio: float = 0.0
+    overall_score: float = 50.0
+
+
+def _normalize_price_df(prices_df: pd.DataFrame) -> pd.DataFrame:
+    df = prices_df.copy()
+    if 'close' not in df.columns:
+        if 'Close' in df.columns:
+            df['close'] = df['Close']
         else:
-            prices = prices_df.iloc[:, 3].values
-        
-        if len(prices) < min_data_points:
-            return None, None
-        
-        # For risk-adjusted labels, use data split
-        if use_risk_adjusted and len(prices) >= 150:
-            feature_prices = prices[:-90]
-            forward_prices = prices[-91:]
-        else:
-            feature_prices = prices
-            forward_prices = None
-        
-        # Calculate features
-        features = {}
-        
-        # Price-based features
-        features['return_1d'] = (feature_prices[-1] / feature_prices[-2] - 1) * 100 if len(feature_prices) >= 2 else 0
-        features['return_5d'] = (feature_prices[-1] / feature_prices[-5] - 1) * 100 if len(feature_prices) >= 5 else 0
-        features['return_20d'] = (feature_prices[-1] / feature_prices[-20] - 1) * 100 if len(feature_prices) >= 20 else 0
-        features['return_60d'] = (feature_prices[-1] / feature_prices[-60] - 1) * 100 if len(feature_prices) >= 60 else 0
-        features['return_252d'] = (feature_prices[-1] / feature_prices[-252] - 1) * 100 if len(feature_prices) >= 252 else 0
-        
-        # Volatility
-        returns = np.diff(feature_prices) / feature_prices[:-1]
-        features['volatility_20d'] = np.std(returns[-20:]) * np.sqrt(252) * 100 if len(returns) >= 20 else 0
-        features['volatility_60d'] = np.std(returns[-60:]) * np.sqrt(252) * 100 if len(returns) >= 60 else 0
-        
-        # Moving average ratios
-        sma_20 = np.mean(feature_prices[-20:]) if len(feature_prices) >= 20 else feature_prices[-1]
-        sma_50 = np.mean(feature_prices[-50:]) if len(feature_prices) >= 50 else feature_prices[-1]
-        sma_200 = np.mean(feature_prices[-200:]) if len(feature_prices) >= 200 else feature_prices[-1]
-        features['sma_ratio_20'] = feature_prices[-1] / sma_20 if sma_20 > 0 else 1
-        features['sma_ratio_50'] = feature_prices[-1] / sma_50 if sma_50 > 0 else 1
-        features['sma_ratio_200'] = feature_prices[-1] / sma_200 if sma_200 > 0 else 1
-        
-        # 52-week high/low position
-        high_52w = info.get('fifty_two_week_high') or np.max(feature_prices[-252:]) if len(feature_prices) >= 252 else np.max(feature_prices)
-        low_52w = info.get('fifty_two_week_low') or np.min(feature_prices[-252:]) if len(feature_prices) >= 252 else np.min(feature_prices)
-        features['high_52w_pct'] = (feature_prices[-1] / high_52w) if high_52w > 0 else 1
-        features['low_52w_pct'] = (feature_prices[-1] / low_52w) if low_52w > 0 else 1
-        
-        # RSI
-        gains = np.maximum(np.diff(feature_prices[-15:]), 0)
-        losses = np.abs(np.minimum(np.diff(feature_prices[-15:]), 0))
-        avg_gain = np.mean(gains) if len(gains) > 0 else 0
-        avg_loss = np.mean(losses) if len(losses) > 0 else 0.001
-        rs = avg_gain / avg_loss if avg_loss > 0 else 100
-        features['rsi_14'] = 100 - (100 / (1 + rs))
-        
-        # Fundamental features from info
-        features['pe_ratio'] = info.get('pe_ratio') or 0
-        features['pb_ratio'] = info.get('pb_ratio') or 0
-        features['dividend_yield'] = info.get('dividend_yield') or 0
-        features['roe'] = info.get('roe') or 0
-        features['debt_to_equity'] = info.get('debt_to_equity') or 0
-        features['market_cap'] = np.log10(info.get('market_cap', 1e9) + 1)
-        
-        # Generate label
-        if use_risk_adjusted and forward_prices is not None:
-            # Risk-adjusted labeling using Sharpe/Sortino
-            sharpe = calculate_forward_sharpe(forward_prices, forward_days=90)
-            sortino = calculate_forward_sortino(forward_prices, forward_days=90)
-            label = generate_risk_adjusted_label(sharpe, sortino)
-        else:
-            # Fallback to rule-based
-            score = 50
-            
-            if features['return_252d'] > 20:
-                score += 15
-            elif features['return_252d'] > 10:
-                score += 10
-            elif features['return_252d'] < -20:
-                score -= 15
-            elif features['return_252d'] < -10:
-                score -= 10
-            
-            if features['sma_ratio_200'] > 1.1:
-                score += 10
-            elif features['sma_ratio_200'] < 0.9:
-                score -= 10
-            
-            pe = features['pe_ratio']
-            if 0 < pe < 15:
-                score += 10
-            elif 15 <= pe < 25:
-                score += 5
-            elif pe > 40:
-                score -= 10
-            
-            roe = features['roe']
-            if roe > 20:
-                score += 10
-            elif roe > 15:
-                score += 5
-            elif roe < 5:
-                score -= 5
-            
-            de = features['debt_to_equity']
-            if de is not None and de < 0.5:
-                score += 5
-            elif de is not None and de > 2:
-                score -= 10
-            
-            if features['volatility_60d'] > 40:
-                score -= 10
-            elif features['volatility_60d'] > 30:
-                score -= 5
-            
-            if score >= 65:
-                label = "BUY"
-            elif score >= 45:
-                label = "HOLD"
-            elif score >= 30:
-                label = "AVOID"
+            df['close'] = df.iloc[:, 3]
+    df['date'] = pd.to_datetime(df['date'])
+    return df.sort_values('date')
+
+
+def _filter_macro_data(macro_data: Optional[Dict[str, Any]], cutoff_date: pd.Timestamp) -> Optional[Dict[str, Any]]:
+    if macro_data is None:
+        return None
+    filtered = {}
+    for key, value in macro_data.items():
+        if isinstance(value, pd.DataFrame):
+            df = value.copy()
+            if 'date' in df.columns:
+                df['date'] = pd.to_datetime(df['date'])
+                df = df[df['date'] <= cutoff_date].set_index('date')
             else:
-                label = "SELL"
-        
-        return features, label
-        
-    except Exception as e:
-        logger.debug(f"Analysis failed for {symbol}: {e}")
-        return None, None
+                df.index = pd.to_datetime(df.index)
+                df = df[df.index <= cutoff_date]
+            filtered[key] = df
+        elif isinstance(value, pd.Series):
+            series = value.copy()
+            series.index = pd.to_datetime(series.index)
+            filtered[key] = series[series.index <= cutoff_date]
+        else:
+            filtered[key] = value
+    return filtered
+
+
+def generate_time_series_samples(
+    symbol: str,
+    prices_df: pd.DataFrame,
+    info: dict,
+    feature_engineer: FeatureEngineer,
+    macro_data: Optional[Dict[str, Any]] = None,
+    forward_days: int = 90,
+    min_history: int = 252,
+    stride: int = 21
+) -> Tuple[List[Dict[str, float]], List[str], List[pd.Timestamp]]:
+    if prices_df is None or prices_df.empty:
+        return [], [], []
+    info = info or {}
+
+    df = _normalize_price_df(prices_df)
+    prices = df['close'].values
+    dates = df['date'].values
+
+    if len(prices) < min_history + forward_days + 1:
+        return [], [], []
+
+    samples, labels, sample_dates = [], [], []
+
+    proxy_fin = ProxyFinancialResult(
+        roce_current=float(info.get('roe') or 0),
+        debt_to_equity=float(info.get('debt_to_equity') or 0),
+        details={}
+    )
+    proxy_val = ProxyValuationResult(
+        current_pe=float(info.get('pe_ratio') or 0),
+        current_pb=float(info.get('pb_ratio') or 0),
+    )
+
+    for idx in range(min_history, len(prices) - forward_days, stride):
+        cutoff_date = pd.to_datetime(dates[idx])
+        price_slice = df.iloc[:idx + 1].set_index('date')['close']
+        forward_prices = prices[idx:idx + forward_days + 1]
+
+        if len(forward_prices) < forward_days + 1:
+            continue
+
+        sharpe = calculate_forward_sharpe(forward_prices, forward_days=forward_days)
+        sortino = calculate_forward_sortino(forward_prices, forward_days=forward_days)
+        label = generate_risk_adjusted_label(sharpe, sortino)
+
+        macro_for_cutoff = _filter_macro_data(macro_data, cutoff_date)
+        feature_set = feature_engineer.extract_features(
+            symbol=symbol,
+            prices=price_slice,
+            financial_result=proxy_fin,
+            valuation_result=proxy_val,
+            macro_data=macro_for_cutoff,
+        )
+
+        samples.append(feature_set.features)
+        labels.append(label)
+        sample_dates.append(cutoff_date)
+
+    return samples, labels, sample_dates
 
 
 def main():
@@ -311,30 +366,28 @@ def main():
         print("❌ Not enough stocks for training (need at least 50)")
         return False
     
-    # Sample stocks for training (use up to 500 for speed)
-    sample_size = min(500, len(stocks))
-    
-    # Prioritize well-known stocks
-    priority_stocks = [
-        "RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "HINDUNILVR",
-        "ITC", "KOTAKBANK", "SBIN", "BAJFINANCE", "BHARTIARTL", "ASIANPAINT",
-        "MARUTI", "TITAN", "NESTLEIND", "SUNPHARMA", "HCLTECH", "WIPRO",
-        "TECHM", "AXISBANK", "ULTRACEMCO", "DRREDDY", "POWERGRID", "NTPC",
-        "TATASTEEL", "JSWSTEEL", "ONGC", "COALINDIA", "PERSISTENT", "LTIM",
-    ]
-    
-    # Build training set: priority stocks first, then random sample
-    training_stocks = [s for s in priority_stocks if s in stocks]
-    remaining = [s for s in stocks if s not in training_stocks]
+    max_stocks = 200
     np.random.seed(42)
-    np.random.shuffle(remaining)
-    training_stocks.extend(remaining[:sample_size - len(training_stocks)])
-    
-    print(f"📈 Training on {len(training_stocks)} stocks...")
+    if len(stocks) > max_stocks:
+        training_stocks = sorted(list(np.random.choice(stocks, size=max_stocks, replace=False)))
+    else:
+        training_stocks = stocks
+    print(f"📈 Training on {len(training_stocks)} random stocks...")
     
     # Collect training data
+    feature_engineer = FeatureEngineer(include_technical=True, include_forecast=False, include_macro=True)
+    delisted_provider = DelistedStockProvider()
+    macro_provider = get_macro_provider()
+    macro_data = None
+    try:
+        macro_data = macro_provider.get_all_macro_data(years=30)
+    except Exception as e:
+        logger.info(f"Macro data unavailable, continuing without: {e}")
+    
     training_data = []
     labels = []
+    sample_dates = []
+    sample_weights = []
     successful = 0
     
     for i, symbol in enumerate(training_stocks):
@@ -345,21 +398,36 @@ def main():
         if prices_df is None:
             continue
         
-        features, label = analyze_stock_simple(symbol, prices_df, info)
-        if features and label:
-            training_data.append(features)
-            labels.append(label)
+        samples, sample_labels, dates = generate_time_series_samples(
+            symbol=symbol,
+            prices_df=prices_df,
+            info=info,
+            feature_engineer=feature_engineer,
+            macro_data=macro_data,
+            forward_days=90,
+            min_history=252,
+            stride=63
+        )
+        
+        if samples:
+            weight = delisted_provider.get_training_weight(symbol)
+            training_data.extend(samples)
+            labels.extend(sample_labels)
+            sample_dates.extend(dates)
+            sample_weights.extend([weight] * len(samples))
             successful += 1
     
     print(f"\n✓ Successfully processed {successful}/{len(training_stocks)} stocks")
     
-    if successful < 50:
+    if len(training_data) < 200:
         print("❌ Not enough valid training samples")
         return False
     
     # Create DataFrame
     X = pd.DataFrame(training_data)
     y = pd.Series(labels)
+    sample_dates = pd.to_datetime(pd.Series(sample_dates))
+    sample_weights = pd.Series(sample_weights)
     
     # Fill NaN
     X = X.fillna(0)
@@ -372,26 +440,24 @@ def main():
     # Train classifier
     print("\n🔧 Training classifier...")
     
-    from sklearn.model_selection import TimeSeriesSplit
     from sklearn.metrics import accuracy_score, f1_score
     
     # Encode labels
     label_map = {'BUY': 0, 'HOLD': 1, 'AVOID': 2, 'SELL': 3}
     y_encoded = y.map(label_map)
     
-    # Walk-Forward Validation: Use time-series split to avoid look-ahead bias
-    print("   Using Walk-Forward Validation (time-series split)")
+    # Walk-Forward Validation: Use time-based split to avoid look-ahead bias
+    print("   Using Walk-Forward Validation (time-based split)")
     
-    X = X.sort_index()
-    y_encoded = y_encoded.reindex(X.index)
+    order = sample_dates.sort_values().index
+    X = X.iloc[order].reset_index(drop=True)
+    y_encoded = y_encoded.iloc[order].reset_index(drop=True)
+    sample_weights = sample_weights.iloc[order].reset_index(drop=True)
     
-    tscv = TimeSeriesSplit(n_splits=5)
-    
-    for train_idx, test_idx in tscv.split(X):
-        pass  # Get last split
-    
-    X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
-    y_train, y_test = y_encoded.iloc[train_idx], y_encoded.iloc[test_idx]
+    split_idx = int(len(X) * 0.8)
+    X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
+    y_train, y_test = y_encoded.iloc[:split_idx], y_encoded.iloc[split_idx:]
+    w_train, w_test = sample_weights.iloc[:split_idx], sample_weights.iloc[split_idx:]
     
     print(f"   Train: {len(X_train)} samples, Test: {len(X_test)} samples")
     
@@ -413,7 +479,7 @@ def main():
             random_state=42,
             verbose=-1,
         )
-        model.fit(X_train, y_train)
+        model.fit(X_train, y_train, sample_weight=w_train)
         
     except Exception as e:
         print(f"   LightGBM failed: {str(e)[:50]}...")
@@ -430,7 +496,7 @@ def main():
                 max_depth=5,
                 random_state=42,
             )
-            model.fit(X_train, y_train)
+            model.fit(X_train, y_train, sample_weight=w_train)
             
         except Exception as e2:
             print(f"\n❌ Training failed: {e2}")
@@ -461,6 +527,12 @@ def main():
         for i, (feat, imp) in enumerate(sorted_imp, 1):
             print(f"   {i}. {feat}: {imp:.3f}")
     except:
+        pass
+    
+    # Retrain on full dataset for final model
+    try:
+        model.fit(X, y_encoded, sample_weight=sample_weights)
+    except Exception:
         pass
     
     # Save model

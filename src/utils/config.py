@@ -70,6 +70,17 @@ def get_signal_weights() -> Dict[str, float]:
     })
 
 
+def get_macro_rsi_thresholds(default: Optional[Dict[str, Dict[str, int]]] = None) -> Dict[str, Dict[str, int]]:
+    """Get market-regime RSI thresholds from config."""
+    fallback = default or {
+        'bull': {'oversold': 40, 'overbought': 80},
+        'bear': {'oversold': 20, 'overbought': 60},
+        'sideways': {'oversold': 30, 'overbought': 70},
+    }
+    thresholds = get_config('macro_config.rsi_thresholds', fallback)
+    return thresholds or fallback
+
+
 def get_red_flag_config(flag_type: str) -> Dict[str, Any]:
     """Get configuration for a specific red flag type."""
     return get_config(f'red_flags.{flag_type}', {})
