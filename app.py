@@ -704,7 +704,7 @@ def main():
                             
                             st.success(f"Analysis complete for December {cutoff}")
                             
-                            col1, col2 = st.columns(2)
+                            col1, col2, col3 = st.columns(3)
                             with col1:
                                 st.markdown(f"### Signal at {cutoff}")
                                 render_signal_badge(tt_result.signal_at_cutoff.signal, tt_result.signal_at_cutoff.composite_score)
@@ -720,9 +720,41 @@ def main():
                                 else:
                                     st.warning("Outcome data not available")
                             
+                            with col3:
+                                st.markdown("### Optimal Signal (Hindsight)")
+                                if tt_result.hindsight_signal:
+                                    # Color based on hindsight signal
+                                    hs_colors = {
+                                        "STRONG BUY": "#006400",
+                                        "BUY": "#228B22", 
+                                        "HOLD": "#FFA500",
+                                        "WEAK HOLD": "#DAA520",
+                                        "AVOID": "#FF6347",
+                                        "SELL": "#DC143C"
+                                    }
+                                    hs_color = hs_colors.get(tt_result.hindsight_signal, "#808080")
+                                    st.markdown(f"""
+                                    <div style='background-color:{hs_color}; padding:15px; border-radius:10px; text-align:center;'>
+                                        <span style='color:white; font-size:18px; font-weight:bold;'>{tt_result.hindsight_signal}</span>
+                                    </div>
+                                    """, unsafe_allow_html=True)
+                                    
+                                    # Show accuracy badge
+                                    if tt_result.signal_accuracy:
+                                        acc_colors = {"CORRECT": "#228B22", "PARTIAL": "#FFA500", "INCORRECT": "#DC143C"}
+                                        acc_color = acc_colors.get(tt_result.signal_accuracy, "#808080")
+                                        st.markdown(f"<p style='text-align:center; margin-top:8px;'><span style='background-color:{acc_color}; color:white; padding:3px 8px; border-radius:5px; font-size:12px;'>{tt_result.signal_accuracy}</span></p>", unsafe_allow_html=True)
+                            
                             st.markdown("---")
                             st.markdown("### Hindsight Analysis")
-                            st.info(tt_result.hindsight_analysis)
+                            
+                            # Show different colors based on accuracy
+                            if tt_result.signal_accuracy == "CORRECT":
+                                st.success(tt_result.hindsight_analysis)
+                            elif tt_result.signal_accuracy == "PARTIAL":
+                                st.warning(tt_result.hindsight_analysis)
+                            else:
+                                st.error(tt_result.hindsight_analysis)
                             
                             # Show red flags at that time
                             if tt_result.red_flags_at_cutoff:
