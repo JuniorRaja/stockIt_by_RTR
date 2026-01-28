@@ -7,23 +7,23 @@ This is not a tip‑sheet. It’s a decision‑support system built for serious 
 ## Architecture (High‑Level)
 
 ```
-Investor Profile (Return, Risk, Tenure)
-        │
-        ▼
-Data Layer (30y price + fundamentals + macro + delisted)
-        │
-        ▼
-───────────────────────────────────────────────┐
-|            Analysis Engines                  |
-|  Governance · Financial · Valuation · Market │
-│                                              │
-└──────────────┬───────────────────────────────┘
-               ▼
-ML Pipeline (Optional)
-Chronos Forecaster → LightGBM Classifier → SHAP Explanations
-                       │
-                       ▼
-Final Signal + Confidence + “Why NOT to Buy”
+        Investor Profile (Return, Risk, Tenure)
+                        │
+                        ▼
+    Data Layer (30y price + fundamentals + macro + delisted)
+                        │
+                        ▼
+ ─────────────────────────────────────────────────┐
+|               Analysis Engines                  |
+|     Governance · Financial · Valuation · Market │
+│                                                 │
+└───────────────────────┬─────────────────────────┘
+                        ▼
+                ML Pipeline (Optional)
+    Chronos Forecaster → LightGBM Classifier → SHAP Explanations
+                        │
+                        ▼
+      Final Signal + Confidence + “Why NOT to Buy”
 ```
 
 ## Installation & Setup
