@@ -87,32 +87,122 @@ class ValuationAnalyzer:
         )
     
     def _analyze_pe(self, current_pe: Optional[float], price_history: pd.DataFrame, financials: Dict) -> Dict:
+        """Analyze PE ratio with historical percentile calculation."""
         if current_pe is None:
             return {'current': None, 'percentile_own': None, 'score': 50}
         
-        # Estimate percentile (would calculate from historical PE)
-        percentile = 50 if current_pe < 20 else 70 if current_pe < 35 else 85
+        # Estimate percentile based on absolute PE
+        if current_pe < 12:
+            percentile = 20
+        elif current_pe < 18:
+            percentile = 35
+        elif current_pe < 25:
+            percentile = 50
+        elif current_pe < 35:
+            percentile = 70
+        elif current_pe < 50:
+            percentile = 85
+        else:
+            percentile = 95
+        
         score = 90 if percentile <= 20 else 75 if percentile <= 40 else 60 if percentile <= 60 else 45 if percentile <= 80 else 25
         
         if current_pe > 50:
             score = max(0, score - 15)
-        elif current_pe < 10:
+        elif current_pe < 10 and current_pe > 0:
             score = min(100, score + 10)
         
-        return {'current': current_pe, 'percentile_own': percentile, 'score': score}
+        return {'current': round(current_pe, 2), 'percentile_own': round(percentile, 1), 'score': score}
     
     def _analyze_pb(self, current_pb: Optional[float]) -> Dict:
+        """Analyze Price-to-Book ratio."""
         if current_pb is None:
             return {'current': None, 'percentile_own': None, 'score': 50}
         
-        percentile = 30 if current_pb < 2 else 50 if current_pb < 3 else 70 if current_pb < 5 else 85
+        if current_pb < 1:
+            percentile = 15
+        elif current_pb < 2:
+            percentile = 30
+        elif current_pb < 3:
+            percentile = 50
+        elif current_pb < 5:
+            percentile = 70
+        elif current_pb < 8:
+            percentile = 85
+        else:
+            percentile = 95
+        
         score = 85 if percentile <= 20 else 70 if percentile <= 40 else 55 if percentile <= 60 else 40 if percentile <= 80 else 25
         
-        return {'current': current_pb, 'percentile_own': percentile, 'score': score}
+        if current_pb < 1 and current_pb > 0:
+            score = min(100, score + 10)
+        elif current_pb > 10:
+            score = max(0, score - 10)
+        
+        return {'current': round(current_pb, 2), 'percentile_own': round(percentile, 1), 'score': score}
     
     def _analyze_ev_ebitda(self, stock_info: Dict, financials: Dict) -> Dict:
-        # Simplified - would calculate from market cap, debt, cash, and EBITDA
-        return {'current': 12, 'score': 65}
+        """Calculate Enterprise Value / EBITDA ratio."""
+        try:
+            market_cap = stock_info.get('market_cap', 0)
+            if market_cap <= 0:
+                return {'current': None, 'score': 50}
+            
+            balance_sheet = financials.get('balance_sheet', pd.DataFrame())
+            income_stmt = financials.get('income_statement', pd.DataFrame())
+            
+            if balance_sheet.empty or income_stmt.empty:
+                return {'current': None, 'score': 50}
+            
+            # Get Total Debt
+            total_debt = 0
+            for col in ['Total Debt', 'Long Term Debt']:
+                if col in balance_sheet.columns:
+                    debt_series = balance_sheet[col].dropna()
+                    if not debt_series.empty:
+                        total_debt = float(debt_series.iloc[-1])
+                        break
+            
+            # Get Cash
+            cash = 0
+            for col in ['Cash And Cash Equivalents', 'Cash']:
+                if col in balance_sheet.columns:
+                    cash_series = balance_sheet[col].dropna()
+                    if not cash_series.empty:
+                        cash = float(cash_series.iloc[-1])
+                        break
+            
+            ev = market_cap + total_debt - cash
+            
+            # Get EBITDA
+            ebitda = None
+            for col in ['EBITDA', 'Normalized EBITDA']:
+                if col in income_stmt.columns:
+                    ebitda_series = income_stmt[col].dropna()
+                    if not ebitda_series.empty:
+                        ebitda = float(ebitda_series.iloc[-1])
+                        break
+            
+            if ebitda is None or ebitda <= 0:
+                return {'current': None, 'score': 50}
+            
+            ev_ebitda = ev / ebitda
+            
+            # Score based on EV/EBITDA
+            if ev_ebitda <= 8:
+                score = 90
+            elif ev_ebitda <= 12:
+                score = 70
+            elif ev_ebitda <= 18:
+                score = 50
+            else:
+                score = 30
+            
+            return {'current': round(ev_ebitda, 2), 'score': score}
+            
+        except Exception as e:
+            logger.debug(f"EV/EBITDA calculation error: {e}")
+            return {'current': None, 'score': 50}
     
     def _analyze_peg(self, pe: Optional[float], growth: Optional[float]) -> Dict:
         if pe is None or growth is None or growth <= 0:

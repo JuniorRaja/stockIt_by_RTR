@@ -283,17 +283,28 @@ def main():
     # Train classifier
     print("\n🔧 Training classifier...")
     
-    from sklearn.model_selection import train_test_split
+    from sklearn.model_selection import TimeSeriesSplit
     from sklearn.metrics import accuracy_score, f1_score
     
     # Encode labels
     label_map = {'BUY': 0, 'HOLD': 1, 'AVOID': 2, 'SELL': 3}
     y_encoded = y.map(label_map)
     
-    # Split
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded
-    )
+    # Walk-Forward Validation: Use time-series split to avoid look-ahead bias
+    print("   Using Walk-Forward Validation (time-series split)")
+    
+    X = X.sort_index()
+    y_encoded = y_encoded.reindex(X.index)
+    
+    tscv = TimeSeriesSplit(n_splits=5)
+    
+    for train_idx, test_idx in tscv.split(X):
+        pass  # Get last split
+    
+    X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+    y_train, y_test = y_encoded.iloc[train_idx], y_encoded.iloc[test_idx]
+    
+    print(f"   Train: {len(X_train)} samples, Test: {len(X_test)} samples")
     
     model = None
     model_type = "lightgbm"

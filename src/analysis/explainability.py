@@ -1,9 +1,14 @@
 """Explainability Engine for Indian Equity Intelligence."""
 
-from typing import Dict, Any, List
-from dataclasses import dataclass
+from typing import Dict, Any, List, Optional, Tuple
+from dataclasses import dataclass, field
+import logging
+import numpy as np
+import pandas as pd
 
 from .signal_generator import SignalResult, UserProfile, Signal
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -17,14 +22,320 @@ class ExplainabilityReport:
     thesis_invalidators: List[str]
     user_profile_analysis: Dict[str, Any]
     data_quality_notes: List[str]
+    ml_explanation: Optional[str] = None
+    shap_contributions: Optional[Dict[str, Any]] = None
+
+
+class SHAPExplainer:
+    """
+    SHAP-based model explainability.
+    
+    Generates explanations for ML model predictions using SHAP values,
+    allowing the tool to say things like:
+    "The model suggests 'Buy' because the 10-year ROE trend outweighed 
+    the recent RSI overbought signal."
+    """
+    
+    # Human-readable feature name mappings
+    FEATURE_NAMES = {
+        'return_1d': '1-day return',
+        'return_5d': '5-day return',
+        'return_20d': '20-day return',
+        'return_60d': '60-day return',
+        'return_252d': '1-year return',
+        'volatility_20d': '20-day volatility',
+        'volatility_60d': '60-day volatility',
+        'momentum_10d': '10-day momentum',
+        'momentum_30d': '30-day momentum',
+        'sma_ratio_20': 'price vs 20-day average',
+        'sma_ratio_50': 'price vs 50-day average',
+        'sma_ratio_200': 'price vs 200-day average',
+        'high_52w_pct': 'distance from 52-week high',
+        'low_52w_pct': 'distance from 52-week low',
+        'rsi_14': 'RSI (14-day)',
+        'rsi_28': 'RSI (28-day)',
+        'macd': 'MACD',
+        'macd_histogram': 'MACD histogram',
+        'bb_position': 'Bollinger Band position',
+        'atr_14': 'Average True Range',
+        'adx_14': 'trend strength (ADX)',
+        'years_listed': 'years since listing',
+        'promoter_holding': 'promoter holding',
+        'pledge_ratio': 'promoter pledge ratio',
+        'dividend_consistency': 'dividend consistency',
+        'governance_score': 'governance quality',
+        'revenue_cagr_3y': '3-year revenue growth',
+        'revenue_cagr_5y': '5-year revenue growth',
+        'pat_cagr_3y': '3-year profit growth',
+        'pat_cagr_5y': '5-year profit growth',
+        'roce': 'return on capital (ROCE)',
+        'fcf_yield': 'free cash flow yield',
+        'debt_to_equity': 'debt-to-equity ratio',
+        'operating_margin': 'operating margin',
+        'earnings_quality': 'earnings quality',
+        'financial_score': 'financial health',
+        'pe_ratio': 'PE ratio',
+        'pe_percentile': 'PE percentile',
+        'pb_ratio': 'Price-to-Book ratio',
+        'pb_percentile': 'PB percentile',
+        'ev_ebitda': 'EV/EBITDA',
+        'peg_ratio': 'PEG ratio',
+        'valuation_score': 'valuation attractiveness',
+        'max_drawdown': 'maximum drawdown',
+        'avg_recovery_months': 'average recovery time',
+        'volatility_1y': '1-year volatility',
+        'volatility_3y': '3-year volatility',
+        'beta': 'market beta',
+        'sharpe_ratio': 'Sharpe ratio',
+        'relative_performance_1y': '1-year outperformance',
+        'market_score': 'market behavior score',
+        'forecast_trend_bullish': 'bullish forecast trend',
+        'forecast_return_5d': 'forecasted 5-day return',
+        'forecast_return_30d': 'forecasted 30-day return',
+        'forecast_confidence': 'forecast confidence',
+        'repo_rate_current': 'RBI repo rate',
+        'usdinr_level': 'USD-INR level',
+        'crude_oil_level': 'crude oil price',
+        'market_regime_bull': 'bull market regime',
+        'market_regime_bear': 'bear market regime',
+        'cpi_inflation_yoy': 'inflation rate',
+        'rsi_regime_adjusted': 'regime-adjusted RSI',
+    }
+    
+    def __init__(self, model=None, feature_names: List[str] = None):
+        """
+        Initialize SHAP explainer.
+        
+        Args:
+            model: Trained ML model (LightGBM, XGBoost, etc.)
+            feature_names: List of feature names in model order
+        """
+        self.model = model
+        self.feature_names = feature_names or []
+        self.explainer = None
+        self._initialized = False
+    
+    def initialize(self, background_data: pd.DataFrame = None):
+        """
+        Initialize SHAP explainer with background data.
+        
+        Args:
+            background_data: Sample of training data for SHAP baseline
+        """
+        if self.model is None:
+            logger.warning("No model provided for SHAP explainer")
+            return
+        
+        try:
+            import shap
+            
+            # Use TreeExplainer for tree-based models (LightGBM, XGBoost)
+            model_type = type(self.model).__name__.lower()
+            
+            if 'lightgbm' in model_type or 'lgbm' in model_type or 'xgb' in model_type or 'gradient' in model_type:
+                self.explainer = shap.TreeExplainer(self.model)
+            else:
+                # Fallback to KernelExplainer
+                if background_data is not None:
+                    self.explainer = shap.KernelExplainer(
+                        self.model.predict_proba, 
+                        shap.sample(background_data, 100)
+                    )
+            
+            self._initialized = True
+            logger.info("SHAP explainer initialized")
+            
+        except ImportError:
+            logger.warning("SHAP not installed. Install with: pip install shap")
+        except Exception as e:
+            logger.warning(f"Could not initialize SHAP explainer: {e}")
+    
+    def explain_prediction(
+        self, 
+        features: pd.DataFrame,
+        prediction_class: int = None
+    ) -> Dict[str, Any]:
+        """
+        Generate SHAP explanation for a single prediction.
+        
+        Args:
+            features: Single-row DataFrame with feature values
+            prediction_class: Which class to explain (for multi-class)
+            
+        Returns:
+            Dictionary with SHAP values and contributions
+        """
+        if not self._initialized or self.explainer is None:
+            return self._empty_explanation()
+        
+        try:
+            import shap
+            
+            # Get SHAP values
+            shap_values = self.explainer.shap_values(features)
+            
+            # Handle multi-class output
+            if isinstance(shap_values, list):
+                # Use specified class or the predicted class
+                if prediction_class is not None:
+                    sv = shap_values[prediction_class][0]
+                else:
+                    sv = shap_values[0][0]  # Default to first class
+            else:
+                sv = shap_values[0]
+            
+            # Create contribution dictionary
+            contributions = dict(zip(self.feature_names, sv))
+            sorted_contrib = sorted(
+                contributions.items(), 
+                key=lambda x: abs(x[1]), 
+                reverse=True
+            )
+            
+            # Split into positive and negative contributions
+            top_positive = [(k, v) for k, v in sorted_contrib if v > 0][:5]
+            top_negative = [(k, v) for k, v in sorted_contrib if v < 0][:5]
+            
+            # Get expected value (baseline)
+            if hasattr(self.explainer, 'expected_value'):
+                base_value = self.explainer.expected_value
+                if isinstance(base_value, (list, np.ndarray)):
+                    base_value = base_value[prediction_class or 0]
+            else:
+                base_value = 0
+            
+            return {
+                'top_positive': top_positive,
+                'top_negative': top_negative,
+                'all_contributions': contributions,
+                'base_value': float(base_value),
+                'prediction_delta': float(sum(sv)),
+                'feature_count': len(self.feature_names)
+            }
+            
+        except Exception as e:
+            logger.debug(f"SHAP explanation error: {e}")
+            return self._empty_explanation()
+    
+    def _empty_explanation(self) -> Dict[str, Any]:
+        """Return empty explanation when SHAP is not available."""
+        return {
+            'top_positive': [],
+            'top_negative': [],
+            'all_contributions': {},
+            'base_value': 0,
+            'prediction_delta': 0,
+            'feature_count': 0
+        }
+    
+    def _humanize_feature(self, feature_name: str) -> str:
+        """Convert feature name to human-readable format."""
+        return self.FEATURE_NAMES.get(feature_name, feature_name.replace('_', ' '))
+    
+    def generate_natural_language_explanation(
+        self, 
+        shap_result: Dict[str, Any],
+        signal: str = None
+    ) -> str:
+        """
+        Convert SHAP values to human-readable explanation.
+        
+        Example output:
+        "The model suggests 'Buy' primarily because the strong 5-year 
+        revenue growth and high ROCE indicate quality, while the low 
+        PE percentile suggests attractive valuation. However, the high 
+        volatility and elevated debt ratio are concerns."
+        """
+        if not shap_result['top_positive'] and not shap_result['top_negative']:
+            return "No ML explanation available."
+        
+        explanations = []
+        
+        # Positive factors
+        if shap_result['top_positive']:
+            pos_factors = []
+            for feature, value in shap_result['top_positive'][:3]:
+                pos_factors.append(self._humanize_feature(feature))
+            
+            if signal in ['BUY', 'HOLD']:
+                explanations.append(
+                    f"The model favors this stock primarily due to: {', '.join(pos_factors)}"
+                )
+            else:
+                explanations.append(
+                    f"Positive factors include: {', '.join(pos_factors)}"
+                )
+        
+        # Negative factors
+        if shap_result['top_negative']:
+            neg_factors = []
+            for feature, value in shap_result['top_negative'][:3]:
+                neg_factors.append(self._humanize_feature(feature))
+            
+            explanations.append(f"Concerns: {', '.join(neg_factors)}")
+        
+        return ". ".join(explanations) + "."
+    
+    def get_feature_importance_summary(
+        self, 
+        shap_result: Dict[str, Any],
+        top_n: int = 5
+    ) -> List[Tuple[str, float, str]]:
+        """
+        Get top features with direction and magnitude.
+        
+        Returns list of (feature_name, contribution, direction)
+        """
+        summary = []
+        
+        for feature, value in shap_result['top_positive'][:top_n]:
+            summary.append((
+                self._humanize_feature(feature),
+                abs(value),
+                'positive'
+            ))
+        
+        for feature, value in shap_result['top_negative'][:top_n]:
+            summary.append((
+                self._humanize_feature(feature),
+                abs(value),
+                'negative'
+            ))
+        
+        # Sort by absolute contribution
+        summary.sort(key=lambda x: x[1], reverse=True)
+        
+        return summary[:top_n]
 
 
 class ExplainabilityEngine:
-    """Generates comprehensive explanations. Every analysis MUST include 'Why NOT to buy'."""
+    """
+    Generates comprehensive explanations with optional SHAP integration.
+    
+    Every analysis MUST include 'Why NOT to buy' section.
+    """
+    
+    def __init__(self, ml_model: Dict[str, Any] = None):
+        """
+        Initialize explainability engine.
+        
+        Args:
+            ml_model: Dictionary with 'model' and 'feature_names' keys
+        """
+        self.shap_explainer = None
+        
+        if ml_model is not None:
+            self.shap_explainer = SHAPExplainer(
+                model=ml_model.get('model'),
+                feature_names=ml_model.get('feature_names', [])
+            )
+            # Initialize will be called lazily on first use
     
     def generate_explanation(self, signal_result: SignalResult, user_profile: UserProfile,
                              governance_score, financial_score, valuation_score, market_score,
-                             stock_info: Dict[str, Any], red_flags: List[Dict] = None) -> ExplainabilityReport:
+                             stock_info: Dict[str, Any], red_flags: List[Dict] = None,
+                             ml_features: pd.DataFrame = None,
+                             prediction_class: int = None) -> ExplainabilityReport:
         red_flags = red_flags or []
         
         summary = self._generate_summary(signal_result, stock_info, user_profile)
@@ -38,11 +349,37 @@ class ExplainabilityEngine:
         profile_analysis = {'profile': user_profile.to_dict(), 'match': signal_result.user_profile_match}
         data_notes = self._assess_data_quality()
         
+        # Generate SHAP explanations if available and ML features provided
+        ml_explanation = None
+        shap_contributions = None
+        
+        if self.shap_explainer is not None and ml_features is not None:
+            try:
+                # Initialize explainer if not done
+                if not self.shap_explainer._initialized:
+                    self.shap_explainer.initialize()
+                
+                if self.shap_explainer._initialized:
+                    shap_result = self.shap_explainer.explain_prediction(
+                        ml_features, 
+                        prediction_class=prediction_class
+                    )
+                    
+                    if shap_result['top_positive'] or shap_result['top_negative']:
+                        ml_explanation = self.shap_explainer.generate_natural_language_explanation(
+                            shap_result,
+                            signal=signal_result.signal
+                        )
+                        shap_contributions = shap_result
+            except Exception as e:
+                logger.debug(f"SHAP explanation failed: {e}")
+        
         return ExplainabilityReport(
             summary=summary, signal_explanation=signal_explanation, why_not_buy=why_not_buy,
             confidence_factors=confidence, dimension_breakdown=breakdown, risk_factors=risks,
             thesis_invalidators=invalidators, user_profile_analysis=profile_analysis,
-            data_quality_notes=data_notes
+            data_quality_notes=data_notes, ml_explanation=ml_explanation,
+            shap_contributions=shap_contributions
         )
     
     def _generate_summary(self, result: SignalResult, info: Dict, profile: UserProfile) -> str:

@@ -9,6 +9,7 @@ import logging
 
 from ..utils.config import get_threshold
 from ..utils.helpers import calculate_cagr, safe_divide, calculate_consistency_score
+from typing import Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -146,11 +147,167 @@ class FinancialAnalyzer:
         return {'pat_cagr_3y': cagr_3y, 'pat_cagr_5y': cagr_5y, 'score': score}
     
     def _analyze_roce(self, income_stmt: pd.DataFrame, balance_sheet: pd.DataFrame) -> Dict:
+        """
+        Calculate Return on Capital Employed (ROCE).
+        
+        ROCE = EBIT / Capital Employed
+        Capital Employed = Total Assets - Current Liabilities
+        """
         if income_stmt.empty or balance_sheet.empty:
             return {'current': None, 'avg_5y': None, 'consistency': 0, 'score': 50}
         
-        # Simplified ROCE from stock info or estimate
-        return {'current': 15, 'avg_5y': 14, 'consistency': 70, 'score': 70}
+        try:
+            ebit = self._get_ebit(income_stmt)
+            if ebit is None or ebit.empty:
+                return {'current': None, 'avg_5y': None, 'consistency': 0, 'score': 50}
+            
+            capital_employed = self._get_capital_employed(balance_sheet)
+            if capital_employed is None or capital_employed.empty:
+                return {'current': None, 'avg_5y': None, 'consistency': 0, 'score': 50}
+            
+            common_idx = ebit.index.intersection(capital_employed.index)
+            if len(common_idx) == 0:
+                return {'current': None, 'avg_5y': None, 'consistency': 0, 'score': 50}
+            
+            ebit = ebit.loc[common_idx]
+            capital_employed = capital_employed.loc[common_idx]
+            
+            roce_series = (ebit / capital_employed.replace(0, np.nan)) * 100
+            roce_series = roce_series.dropna().sort_index()
+            
+            if roce_series.empty:
+                return {'current': None, 'avg_5y': None, 'consistency': 0, 'score': 50}
+            
+            current_roce = float(roce_series.iloc[-1])
+            avg_5y = float(roce_series.tail(5).mean()) if len(roce_series) >= 2 else current_roce
+            
+            if len(roce_series) >= 3:
+                recent = roce_series.iloc[-1]
+                older = roce_series.iloc[-3] if len(roce_series) >= 3 else roce_series.iloc[0]
+                trend = 'improving' if recent > older else 'declining' if recent < older * 0.9 else 'stable'
+            else:
+                trend = 'insufficient_data'
+            
+            consistency = calculate_consistency_score(roce_series, threshold=12.0)
+            score = self._score_roce(current_roce, avg_5y, consistency)
+            
+            return {
+                'current': round(current_roce, 2),
+                'avg_5y': round(avg_5y, 2),
+                'trend': trend,
+                'consistency': consistency,
+                'score': score,
+            }
+            
+        except Exception as e:
+            logger.debug(f"ROCE calculation error: {e}")
+            return {'current': None, 'avg_5y': None, 'consistency': 0, 'score': 50}
+    
+    def _get_ebit(self, income_stmt: pd.DataFrame) -> Optional[pd.Series]:
+        """Extract EBIT from income statement."""
+        ebit_cols = ['EBIT', 'Operating Income', 'Operating Profit', 'Earnings Before Interest And Taxes']
+        
+        for col in ebit_cols:
+            if col in income_stmt.columns:
+                return income_stmt[col].dropna()
+        
+        net_income_cols = ['Net Income', 'Profit After Tax', 'PAT', 'Net Profit']
+        interest_cols = ['Interest Expense', 'Interest', 'Finance Costs']
+        tax_cols = ['Tax Provision', 'Income Tax Expense', 'Tax']
+        
+        net_income = None
+        for col in net_income_cols:
+            if col in income_stmt.columns:
+                net_income = income_stmt[col]
+                break
+        
+        if net_income is not None:
+            interest = pd.Series(0, index=income_stmt.index)
+            for col in interest_cols:
+                if col in income_stmt.columns:
+                    interest = income_stmt[col].fillna(0)
+                    break
+            
+            tax = pd.Series(0, index=income_stmt.index)
+            for col in tax_cols:
+                if col in income_stmt.columns:
+                    tax = income_stmt[col].fillna(0)
+                    break
+            
+            return (net_income + interest.abs() + tax.abs()).dropna()
+        
+        return None
+    
+    def _get_capital_employed(self, balance_sheet: pd.DataFrame) -> Optional[pd.Series]:
+        """Calculate Capital Employed = Total Assets - Current Liabilities."""
+        total_assets_cols = ['Total Assets', 'Total Asset']
+        current_liab_cols = ['Current Liabilities', 'Total Current Liabilities']
+        
+        total_assets = None
+        for col in total_assets_cols:
+            if col in balance_sheet.columns:
+                total_assets = balance_sheet[col]
+                break
+        
+        current_liab = None
+        for col in current_liab_cols:
+            if col in balance_sheet.columns:
+                current_liab = balance_sheet[col]
+                break
+        
+        if total_assets is not None and current_liab is not None:
+            return (total_assets - current_liab).dropna()
+        
+        equity_cols = ['Total Stockholder Equity', 'Stockholders Equity', 'Total Equity']
+        debt_cols = ['Long Term Debt', 'Long-term Debt']
+        
+        equity = None
+        for col in equity_cols:
+            if col in balance_sheet.columns:
+                equity = balance_sheet[col]
+                break
+        
+        long_term_debt = pd.Series(0, index=balance_sheet.index)
+        for col in debt_cols:
+            if col in balance_sheet.columns:
+                long_term_debt = balance_sheet[col].fillna(0)
+                break
+        
+        if equity is not None:
+            return (equity + long_term_debt).dropna()
+        
+        return None
+    
+    def _score_roce(self, current: float, avg_5y: float, consistency: float) -> float:
+        """Score ROCE based on Indian market context."""
+        score = 50.0
+        
+        if current >= 25:
+            score += 30
+        elif current >= 20:
+            score += 25
+        elif current >= 15:
+            score += 18
+        elif current >= 12:
+            score += 10
+        elif current >= 8:
+            score += 0
+        else:
+            score -= 15
+        
+        if consistency >= 80:
+            score += 15
+        elif consistency >= 60:
+            score += 10
+        elif consistency >= 40:
+            score += 5
+        
+        if current > avg_5y * 1.1:
+            score += 5
+        elif current < avg_5y * 0.8:
+            score -= 5
+        
+        return min(100, max(0, score))
     
     def _analyze_cashflow(self, cash_flow: pd.DataFrame, income_stmt: pd.DataFrame, stock_info: Dict) -> Dict:
         result = {'fcf_yield': None, 'earnings_quality': 1.0, 'negative_fcf_years': 0, 'score': 50}
@@ -171,14 +328,183 @@ class FinancialAnalyzer:
         return result
     
     def _analyze_leverage(self, balance_sheet: pd.DataFrame) -> Dict:
+        """Analyze leverage metrics from balance sheet."""
         if balance_sheet.empty:
             return {'debt_to_equity': None, 'score': 50}
         
-        # Would calculate D/E from balance sheet
-        return {'debt_to_equity': 0.5, 'score': 75}
+        try:
+            debt_cols = ['Total Debt', 'Long Term Debt', 'Long-term Debt']
+            total_debt = None
+            for col in debt_cols:
+                if col in balance_sheet.columns:
+                    total_debt = balance_sheet[col].dropna()
+                    break
+            
+            if total_debt is None:
+                short_debt = pd.Series(0, index=balance_sheet.index)
+                long_debt = pd.Series(0, index=balance_sheet.index)
+                
+                for col in ['Short Term Debt', 'Current Debt']:
+                    if col in balance_sheet.columns:
+                        short_debt = balance_sheet[col].fillna(0)
+                        break
+                
+                for col in ['Long Term Debt', 'Long-term Debt']:
+                    if col in balance_sheet.columns:
+                        long_debt = balance_sheet[col].fillna(0)
+                        break
+                
+                total_debt = (short_debt + long_debt).dropna()
+            
+            equity_cols = ['Total Stockholder Equity', 'Stockholders Equity', 'Total Equity']
+            total_equity = None
+            for col in equity_cols:
+                if col in balance_sheet.columns:
+                    total_equity = balance_sheet[col].dropna()
+                    break
+            
+            if total_debt is None or total_equity is None:
+                return {'debt_to_equity': None, 'score': 50}
+            
+            common_idx = total_debt.index.intersection(total_equity.index)
+            if len(common_idx) == 0:
+                return {'debt_to_equity': None, 'score': 50}
+            
+            de_ratio = total_debt.loc[common_idx] / total_equity.loc[common_idx].replace(0, np.nan)
+            de_ratio = de_ratio.dropna().sort_index()
+            
+            if de_ratio.empty:
+                return {'debt_to_equity': None, 'score': 50}
+            
+            current_de = float(de_ratio.iloc[-1])
+            
+            if len(de_ratio) >= 3:
+                trend = 'increasing' if de_ratio.iloc[-1] > de_ratio.iloc[0] * 1.1 else 'decreasing' if de_ratio.iloc[-1] < de_ratio.iloc[0] * 0.9 else 'stable'
+            else:
+                trend = 'insufficient_data'
+            
+            score = self._score_leverage(current_de, trend)
+            
+            return {'debt_to_equity': round(current_de, 2), 'trend': trend, 'score': score}
+            
+        except Exception as e:
+            logger.debug(f"Leverage calculation error: {e}")
+            return {'debt_to_equity': None, 'score': 50}
+    
+    def _score_leverage(self, de_ratio: float, trend: str) -> float:
+        """Score leverage based on D/E ratio."""
+        score = 50.0
+        
+        if de_ratio <= 0.3:
+            score += 35
+        elif de_ratio <= 0.5:
+            score += 25
+        elif de_ratio <= 1.0:
+            score += 15
+        elif de_ratio <= 1.5:
+            score += 0
+        elif de_ratio <= 2.0:
+            score -= 15
+        else:
+            score -= 25
+        
+        if trend == 'decreasing':
+            score += 5
+        elif trend == 'increasing':
+            score -= 5
+        
+        return min(100, max(0, score))
     
     def _analyze_margins(self, income_stmt: pd.DataFrame) -> Dict:
-        return {'opm_current': 15, 'trend': 'stable', 'score': 65}
+        """Analyze profit margins from income statement."""
+        if income_stmt.empty:
+            return {'opm_current': None, 'npm_current': None, 'trend': 'unknown', 'score': 50}
+        
+        try:
+            revenue = None
+            for col in ['Total Revenue', 'Revenue', 'Net Sales']:
+                if col in income_stmt.columns:
+                    revenue = income_stmt[col].dropna()
+                    break
+            
+            if revenue is None or revenue.empty:
+                return {'opm_current': None, 'npm_current': None, 'trend': 'unknown', 'score': 50}
+            
+            operating_income = None
+            for col in ['Operating Income', 'Operating Profit', 'EBIT']:
+                if col in income_stmt.columns:
+                    operating_income = income_stmt[col].dropna()
+                    break
+            
+            net_income = None
+            for col in ['Net Income', 'Profit After Tax', 'PAT']:
+                if col in income_stmt.columns:
+                    net_income = income_stmt[col].dropna()
+                    break
+            
+            result = {'opm_current': None, 'npm_current': None, 'trend': 'unknown', 'score': 50}
+            
+            if operating_income is not None:
+                common_idx = revenue.index.intersection(operating_income.index)
+                if len(common_idx) > 0:
+                    opm_series = (operating_income.loc[common_idx] / revenue.loc[common_idx]) * 100
+                    if not opm_series.dropna().empty:
+                        result['opm_current'] = round(float(opm_series.dropna().iloc[-1]), 2)
+            
+            if net_income is not None:
+                common_idx = revenue.index.intersection(net_income.index)
+                if len(common_idx) > 0:
+                    npm_series = (net_income.loc[common_idx] / revenue.loc[common_idx]) * 100
+                    npm_series = npm_series.dropna().sort_index()
+                    
+                    if not npm_series.empty:
+                        result['npm_current'] = round(float(npm_series.iloc[-1]), 2)
+                        
+                        if len(npm_series) >= 3:
+                            recent = npm_series.iloc[-1]
+                            older = npm_series.iloc[-3]
+                            result['trend'] = 'improving' if recent > older * 1.1 else 'declining' if recent < older * 0.9 else 'stable'
+            
+            result['score'] = self._score_margins(result['opm_current'], result['npm_current'], result['trend'])
+            
+            return result
+            
+        except Exception as e:
+            logger.debug(f"Margin calculation error: {e}")
+            return {'opm_current': None, 'npm_current': None, 'trend': 'unknown', 'score': 50}
+    
+    def _score_margins(self, opm: Optional[float], npm: Optional[float], trend: str) -> float:
+        """Score margins based on profitability."""
+        score = 50.0
+        
+        if opm is not None:
+            if opm >= 25:
+                score += 20
+            elif opm >= 20:
+                score += 15
+            elif opm >= 15:
+                score += 10
+            elif opm >= 10:
+                score += 5
+            elif opm < 5:
+                score -= 10
+        
+        if npm is not None:
+            if npm >= 20:
+                score += 15
+            elif npm >= 15:
+                score += 10
+            elif npm >= 10:
+                score += 5
+            elif npm < 0:
+                score -= 15
+        
+        if trend == 'improving':
+            score += 5
+        elif trend == 'declining':
+            score -= 5
+        
+        return min(100, max(0, score))
     
     def _calc_cagr(self, series: pd.Series, years: int) -> Optional[float]:
         if len(series) < 2:
@@ -194,3 +520,52 @@ class FinancialAnalyzer:
                          cashflow: float, leverage: float, margin: float) -> float:
         return round(revenue * 0.20 + profit * 0.20 + roce * 0.20 + 
                      cashflow * 0.20 + leverage * 0.10 + margin * 0.10, 1)
+    
+    @staticmethod
+    def get_investable_universe_filter() -> Dict[str, Any]:
+        """Get filter criteria for the investable universe."""
+        return {
+            'min_positive_cashflow_years': 5,
+            'min_roce': 10,
+            'max_debt_to_equity': 2.0,
+            'min_years_listed': 3,
+            'min_market_cap_cr': 100,
+            'min_revenue_growth_3y': 0,
+            'require_profitable': True,
+        }
+    
+    def passes_fundamental_filter(
+        self, 
+        symbol: str, 
+        financials: Dict[str, pd.DataFrame],
+        stock_info: Dict[str, Any],
+        filter_criteria: Optional[Dict[str, Any]] = None
+    ) -> Tuple[bool, List[str]]:
+        """Check if a stock passes the fundamental quality filter."""
+        criteria = filter_criteria or self.get_investable_universe_filter()
+        failed_reasons = []
+        
+        try:
+            result = self.analyze(symbol, financials, stock_info)
+        except Exception as e:
+            return False, [f"Could not analyze: {e}"]
+        
+        market_cap = stock_info.get('market_cap', 0)
+        min_market_cap = criteria.get('min_market_cap_cr', 100) * 1e7
+        if market_cap < min_market_cap:
+            failed_reasons.append(f"Market cap too small")
+        
+        min_roce = criteria.get('min_roce', 10)
+        if result.roce_current is not None and result.roce_current < min_roce:
+            failed_reasons.append(f"ROCE {result.roce_current:.1f}% below minimum")
+        
+        max_de = criteria.get('max_debt_to_equity', 2.0)
+        if result.debt_to_equity is not None and result.debt_to_equity > max_de:
+            failed_reasons.append(f"D/E ratio {result.debt_to_equity:.2f} above maximum")
+        
+        if result.red_flags:
+            for rf in result.red_flags:
+                failed_reasons.append(f"Red flag: {rf}")
+        
+        passes = len(failed_reasons) == 0
+        return passes, failed_reasons

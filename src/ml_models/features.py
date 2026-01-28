@@ -96,23 +96,41 @@ class FeatureEngineer:
         "forecast_uncertainty",
     ]
     
-    def __init__(self, include_technical: bool = True, include_forecast: bool = True):
+    MACRO_FEATURES = [
+        "repo_rate_current",
+        "repo_rate_change_1y",
+        "usdinr_level",
+        "usdinr_change_1y",
+        "crude_oil_level",
+        "crude_oil_change_1y",
+        "market_regime_bull",      # One-hot encoded
+        "market_regime_bear",
+        "cpi_inflation_yoy",
+        "rsi_regime_adjusted",     # RSI adjusted for market regime
+    ]
+    
+    def __init__(self, include_technical: bool = True, include_forecast: bool = True,
+                 include_macro: bool = True):
         """
         Initialize feature engineer.
         
         Args:
             include_technical: Include technical analysis features
             include_forecast: Include forecast-based features
+            include_macro: Include macro-economic features
         """
         self.include_technical = include_technical
         self.include_forecast = include_forecast
+        self.include_macro = include_macro
+        self._market_regime = 'sideways'  # Default regime
         
         # Build feature list
         self.feature_names = (
             self.PRICE_FEATURES +
             (self.TECHNICAL_FEATURES if include_technical else []) +
             self.FUNDAMENTAL_FEATURES +
-            (self.FORECAST_FEATURES if include_forecast else [])
+            (self.FORECAST_FEATURES if include_forecast else []) +
+            (self.MACRO_FEATURES if include_macro else [])
         )
     
     def extract_features(
@@ -124,6 +142,7 @@ class FeatureEngineer:
         valuation_result: Optional[Any] = None,
         market_result: Optional[Any] = None,
         forecast_result: Optional[Any] = None,
+        macro_data: Optional[Dict[str, Any]] = None,
     ) -> FeatureSet:
         """
         Extract all features for a stock.
@@ -136,6 +155,7 @@ class FeatureEngineer:
             valuation_result: Output from ValuationAnalyzer
             market_result: Output from MarketBehaviourAnalyzer
             forecast_result: Output from TimeSeriesForecaster
+            macro_data: Macro-economic data from MacroDataProvider
             
         Returns:
             FeatureSet with all extracted features
@@ -162,6 +182,11 @@ class FeatureEngineer:
             forecast_features = self._extract_forecast_features(forecast_result, prices)
             features.update(forecast_features)
         
+        # Macro features
+        if self.include_macro:
+            macro_features = self._extract_macro_features(macro_data, prices)
+            features.update(macro_features)
+        
         return FeatureSet(
             symbol=symbol,
             features=features,
@@ -169,6 +194,7 @@ class FeatureEngineer:
             metadata={
                 "price_data_points": len(prices),
                 "latest_price": float(prices.iloc[-1]) if len(prices) > 0 else 0.0,
+                "market_regime": self._market_regime,
             }
         )
     
@@ -466,6 +492,121 @@ class FeatureEngineer:
             features["forecast_uncertainty"] = 0.0
         
         return features
+    
+    def _extract_macro_features(
+        self, 
+        macro_data: Optional[Dict[str, Any]],
+        prices: pd.Series
+    ) -> Dict[str, float]:
+        """
+        Extract macro-economic features.
+        
+        Macro factors like Repo Rates, USD-INR, and Crude Oil are often
+        better predictors of long-term cycles in the Indian market
+        than technical indicators alone.
+        """
+        features = {name: 0.0 for name in self.MACRO_FEATURES}
+        
+        if macro_data is None:
+            return features
+        
+        # Repo Rate
+        repo = macro_data.get('repo_rate')
+        if repo is not None:
+            if isinstance(repo, pd.DataFrame):
+                repo = repo['repo_rate'] if 'repo_rate' in repo.columns else repo.iloc[:, 0]
+            if isinstance(repo, pd.Series) and not repo.empty:
+                features['repo_rate_current'] = float(repo.iloc[-1])
+                if len(repo) > 252:
+                    features['repo_rate_change_1y'] = float(repo.iloc[-1] - repo.iloc[-252])
+        
+        # USD-INR
+        usdinr = macro_data.get('usdinr')
+        if usdinr is not None:
+            if isinstance(usdinr, pd.DataFrame):
+                usdinr = usdinr['usdinr'] if 'usdinr' in usdinr.columns else usdinr.iloc[:, 0]
+            if isinstance(usdinr, pd.Series) and not usdinr.empty:
+                features['usdinr_level'] = float(usdinr.iloc[-1])
+                if len(usdinr) > 252:
+                    features['usdinr_change_1y'] = (
+                        (usdinr.iloc[-1] / usdinr.iloc[-252] - 1) * 100
+                    )
+        
+        # Crude Oil
+        crude = macro_data.get('crude_oil')
+        if crude is not None:
+            if isinstance(crude, pd.DataFrame):
+                crude = crude['crude_oil'] if 'crude_oil' in crude.columns else crude.iloc[:, 0]
+            if isinstance(crude, pd.Series) and not crude.empty:
+                features['crude_oil_level'] = float(crude.iloc[-1])
+                if len(crude) > 252:
+                    features['crude_oil_change_1y'] = (
+                        (crude.iloc[-1] / crude.iloc[-252] - 1) * 100
+                    )
+        
+        # Market Regime (one-hot encoded)
+        regime = macro_data.get('market_regime', 'sideways')
+        self._market_regime = regime
+        features['market_regime_bull'] = 1.0 if regime == 'bull' else 0.0
+        features['market_regime_bear'] = 1.0 if regime == 'bear' else 0.0
+        
+        # CPI Inflation
+        cpi = macro_data.get('cpi')
+        if cpi is not None:
+            if isinstance(cpi, pd.DataFrame):
+                cpi = cpi['cpi_yoy'] if 'cpi_yoy' in cpi.columns else cpi.iloc[:, 0]
+            if isinstance(cpi, pd.Series) and not cpi.empty:
+                features['cpi_inflation_yoy'] = float(cpi.iloc[-1])
+        
+        # RSI adjusted for market regime
+        if len(prices) >= 14:
+            raw_rsi = self._calculate_rsi(prices, 14)
+            features['rsi_regime_adjusted'] = self._adjust_rsi_for_regime(raw_rsi, regime)
+        
+        return features
+    
+    def _adjust_rsi_for_regime(self, rsi: float, regime: str) -> float:
+        """
+        Adjust RSI based on market regime.
+        
+        Returns a normalized score (-1 to 1) where:
+        - Negative values indicate oversold
+        - Positive values indicate overbought
+        - Magnitude indicates strength of signal
+        """
+        thresholds = self.get_regime_rsi_thresholds(regime)
+        oversold = thresholds['oversold']
+        overbought = thresholds['overbought']
+        midpoint = (oversold + overbought) / 2
+        
+        if rsi < oversold:
+            # Oversold: normalize to -1 to -0.5
+            return -1.0 + 0.5 * (rsi / oversold)
+        elif rsi > overbought:
+            # Overbought: normalize to 0.5 to 1
+            return 0.5 + 0.5 * ((rsi - overbought) / (100 - overbought))
+        else:
+            # Neutral zone: normalize to -0.5 to 0.5
+            return (rsi - midpoint) / (overbought - oversold)
+    
+    @staticmethod
+    def get_regime_rsi_thresholds(regime: str) -> Dict[str, int]:
+        """
+        Get dynamic RSI thresholds based on market regime.
+        
+        In bull markets, RSI can stay overbought longer.
+        In bear markets, oversold conditions can persist.
+        """
+        thresholds = {
+            'bull': {'oversold': 40, 'overbought': 80},
+            'bear': {'oversold': 20, 'overbought': 60},
+            'sideways': {'oversold': 30, 'overbought': 70}
+        }
+        return thresholds.get(regime, thresholds['sideways'])
+    
+    def set_market_regime(self, regime: str):
+        """Set the current market regime for feature extraction."""
+        self._market_regime = regime
     
     def create_training_dataset(
         self,
