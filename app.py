@@ -47,6 +47,9 @@ st.markdown("""
     .main { padding: 0 1rem; }
     .stTabs [data-baseweb="tab-list"] { gap: 24px; }
     div[data-testid="metric-container"] { background-color: #262730; padding: 10px; border-radius: 5px; }
+    /* Widen dialog overlays (Streamlit v1.30+) */
+    div[role="dialog"] { width: 90vw !important; max-width: 90vw !important; }
+    div[role="dialog"] > div { max-height: 90vh; overflow-y: auto; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -166,6 +169,188 @@ def _score_candidates(df: pd.DataFrame, profile: Dict[str, Any]) -> pd.DataFrame
     scored = df.copy()
     scored["score"] = scored.apply(score_row, axis=1)
     return scored.sort_values("score", ascending=False)
+
+
+def _render_dialog(title: str, render_body):
+    """Render a floating dialog if supported, else return False."""
+    if hasattr(st, "dialog"):
+        @st.dialog(title)
+        def _dlg():
+            render_body()
+        _dlg()
+        return True
+    if hasattr(st, "experimental_dialog"):
+        @st.experimental_dialog(title)
+        def _dlg():
+            render_body()
+        _dlg()
+        return True
+    return False
+
+
+def _render_wiki_modal():
+    def _body():
+        st.markdown("""
+### Core Concepts
+- **Signal (BUY/HOLD/AVOID/SELL)**: Composite outcome across governance, financials, valuation, market behavior, and ML context. It’s a suitability score, not a trade trigger.
+- **Composite Score (0–100)**: Weighted blend of engine scores (+ ML if enabled).
+- **Why NOT to Buy**: Mandatory counter‑thesis to reduce confirmation bias.
+
+### Governance (Stewardship Quality)
+- **Promoter Holding**: % held by promoters. Higher + stable is generally safer.
+- **Pledge Ratio**: % of promoter shares pledged. Rising pledges imply financing stress.
+- **Dividend Consistency**: Years of steady payouts.
+- **Auditor Stability**: Frequent changes are a governance risk marker.
+
+### Financials (Business Strength)
+- **Revenue CAGR**: `((End / Start)^(1/Years) - 1)`.
+- **PAT CAGR**: Profit growth over 3/5 years.
+- **ROCE**: `EBIT / (Total Assets - Current Liabilities)`.
+- **Earnings Quality**: `CFO / PAT` (< 0.5 is weak).
+- **FCF Yield**: `Free Cash Flow / Market Cap`.
+- **Debt‑to‑Equity**: Leverage risk; rising trend is a concern.
+- **Investable Universe Filter**: Flags inconsistent cash flow quality.
+
+### Valuation (What You Pay)
+- **P/E**: `Price / EPS`.
+- **P/B**: `Price / Book Value`.
+- **EV/EBITDA**: Capital‑structure‑adjusted valuation.
+- **PEG**: `P/E / Earnings Growth`.
+- **Historical Percentile**: Where current valuation sits vs its own history.
+
+### Market Behavior (Risk & Cyclicality)
+- **Max Drawdown**: Worst peak‑to‑trough fall.
+- **Recovery Time**: Months to regain highs after >20% drawdowns.
+- **Volatility Regime**: Low/Medium/High/Extreme from 1–3Y vol.
+- **Beta**: Sensitivity to Nifty.
+- **Sharpe**: `(Return – Risk‑Free) / Volatility`.
+- **Relative Performance**: vs Nifty (1Y/3Y/5Y).
+
+### Regime‑Aware Technicals
+- **Market Regime**: Bull/Bear/Sideways from trend structure.
+- **Regime‑Adjusted RSI**: RSI thresholds adapt by regime.
+
+### Macro Context
+- **Repo Rate**: Higher rates compress valuation.
+- **USD‑INR**: Currency swings impact importers/exporters.
+- **Crude Oil**: Energy/transport sensitivity.
+- **CPI Inflation**: Higher inflation can squeeze margins and multiples.
+
+### ML Insights (Optional)
+- **Chronos Forecaster**: 5–30 day trend direction.
+- **LightGBM Classifier**: Feature‑driven signal probabilities.
+- **Walk‑Forward Validation**: Past → future split.
+- **Risk‑Adjusted Targets**: Sharpe/Sortino instead of raw returns.
+- **SHAP**: Feature‑level explanation of model reasoning.
+
+### Time Travel Mode
+- Runs analysis as‑of a historical date using only data available then.
+- Useful to test logic in real past regimes.
+
+### Scenario Simulator (Stress Testing)
+Preset scenarios and intent:
+- **Revenue Stagnation**: growth drops to 0% (growth dependency risk).
+- **Margin Compression**: -500 bps OPM (cost pressure risk).
+- **Rising Interest Rates**: +200 bps, PE compression (valuation risk).
+- **Demand Slowdown**: negative volume growth (cycle risk).
+- **Cost Inflation**: raw material spike with partial pass‑through.
+- **Currency Depreciation**: INR down 15% (import cost risk).
+
+Interpreting outcomes:
+- **Good**: robust/resilient rating, small return impact, limited target damage.
+- **Bad**: fragile rating, large return impact, material target price drawdown.
+""")
+    if _render_dialog("Wiki", _body):
+        return
+    with st.expander("Wiki", expanded=True):
+        _body()
+
+
+def _render_howto_modal():
+    def _body():
+        st.markdown("""
+### Quick Start Flow
+1. Set your profile in the sidebar.
+2. Use **Suggest** to shortlist or search a stock directly.
+3. Review **Overview → Why NOT → Charts → Scenarios → Time Travel**.
+4. Use **ML Insights** as a second opinion if enabled.
+
+### 1) Set Your Profile (Sidebar)
+- **Expected CAGR**: Your target annual return.
+- **Risk Appetite**: Low/Medium/High.
+- **Holding Period**: Your investment horizon.
+- **Price Range + Market Cap**: Filters for suggestion accuracy.
+**Tip**: If you’re unsure, start with Medium risk and a 5–10 year horizon.
+
+### 2) Suggestions
+- Click **Suggest** to see profile-based candidates.
+- Click any stock to run analysis.
+**Tip**: Suggestions are ranked to match your profile; widen filters if the list is short.
+
+### 3) Stock Search
+- Use the dropdown to pick a symbol or type directly.
+- Click **Analyze** to run the full pipeline.
+**Tip**: Start with a known large-cap to learn how the signal behaves.
+
+### 4) Overview Tab
+- See the signal, composite score, and dimension breakdown.
+- Review key positives and concerns.
+- Read the red flags if present.
+**Tip**: A strong score with major red flags should still be treated cautiously.
+**Interpretation**:
+- Governance strong + Financial weak = quality business but execution risk.
+- Valuation expensive + Market strong = momentum, not necessarily margin of safety.
+
+### 5) ML Insights Tab
+- Shows ML signal, confidence, and price trend (if models loaded).
+- Review SHAP explanations to understand why the model leaned bullish/bearish.
+**Tip**: Use ML as a second opinion, not the primary decision.
+**Interpretation**:
+- High confidence but low composite score → ML sees short‑term upside, fundamentals lag.
+- Low confidence across signals → treat as exploratory only.
+
+### 6) Why NOT Tab
+- Always read this section before acting.
+- It highlights mismatches with your profile and core risks.
+**Tip**: If any “Why NOT” item would keep you up at night, reduce position size or skip.
+
+### 7) Charts Tab
+- Full price history with candlesticks and volume.
+- Drawdown chart to understand worst-case behavior.
+**Tip**: Look for shallow drawdowns and faster recoveries for long-term holdings.
+**Interpretation**:
+- Repeated deep drawdowns → higher stress tolerance required.
+- Long recovery → opportunity cost risk for long‑term capital.
+
+### 8) Time Travel Tab
+- Select a historical cutoff year and re-run analysis.
+- Use this to sanity-check against past regimes.
+**Tip**: Test major market events (e.g., 2008, 2020) to see how resilient the thesis is.
+**Interpretation**:
+- If signal flips wildly across regimes, demand a larger margin of safety.
+
+### 9) Scenarios Tab
+- Stress-test macro shocks and compare resilience.
+- Use the results to size positions and risk-manage.
+**Tip**: If multiple scenarios show “fragile,” wait for better valuation or safer entry.
+**Interpretation**:
+- Robust/Resilient → position sizing can be higher.
+- Moderate/Fragile → size down or require better valuation.
+
+### 10) Under the Hood (Sidebar)
+- Expand **Under the Hood** for data source and ML model status.
+**Tip**: If ML isn’t ready, run the training script or check model downloads.
+
+### Common Beginner Mistakes (Avoid These)
+- Over‑trusting a BUY signal without reading “Why NOT”.
+- Ignoring drawdowns because returns look good.
+- Using ML confidence as a substitute for fundamentals.
+- Skipping Time Travel when testing new ideas.
+""")
+    if _render_dialog("How to Use", _body):
+        return
+    with st.expander("How to Use", expanded=True):
+        _body()
 
 
 class IndianEquityIntelligence:
@@ -404,63 +589,80 @@ def main():
                               risk_appetite=profile_dict['risk_appetite'],
                               holding_tenure=profile_dict['holding_tenure'])
         st.markdown("---")
-        st.subheader("Data Status")
-        try:
-            available = app.data_manager.get_available_sources()
-            for s in available:
-                st.success(f"✓ {s.replace('_', ' ').title()}")
-        except Exception:
-            st.info("Data sources load on first search")
-        
-        # ML Models Status
-        st.markdown("---")
-        st.subheader("ML Models")
-        ml_status = app.get_ml_status()
-        
-        if ml_status.get('enabled'):
-            if not ml_status.get('initialized'):
-                if st.button("🚀 Initialize ML Models", use_container_width=True):
-                    with st.spinner("Loading ML models..."):
-                        success, messages = app.initialize_ml()
-                        for msg in messages:
-                            st.info(msg)
-                        if success:
-                            st.success("ML models ready! Re-run analysis to see ML insights.")
-                            # Clear previous results to force re-analysis
-                            if 'results' in st.session_state:
-                                del st.session_state.results
-                        st.rerun()
-            else:
-                # Show status of each layer
-                for layer in ['forecaster', 'classifier', 'explainer']:
-                    layer_info = ml_status.get(layer, {})
-                    model_name = layer_info.get('model') or 'Not configured'
-                    is_ready = layer_info.get('ready', False)
+        with st.expander("Under the Hood", expanded=False):
+            st.subheader("Data Status")
+            try:
+                available = app.data_manager.get_available_sources()
+                for s in available:
+                    st.success(f"✓ {s.replace('_', ' ').title()}")
+            except Exception:
+                st.info("Data sources load on first search")
+            
+            # ML Models Status
+            st.markdown("---")
+            st.subheader("ML Models")
+            ml_status = app.get_ml_status()
+            
+            if ml_status.get('enabled'):
+                if not ml_status.get('initialized'):
+                    if st.button("🚀 Initialize ML Models", use_container_width=True):
+                        with st.spinner("Loading ML models..."):
+                            success, messages = app.initialize_ml()
+                            for msg in messages:
+                                st.info(msg)
+                            if success:
+                                st.success("ML models ready! Re-run analysis to see ML insights.")
+                                # Clear previous results to force re-analysis
+                                if 'results' in st.session_state:
+                                    del st.session_state.results
+                            st.rerun()
+                else:
+                    # Show status of each layer
+                    for layer in ['forecaster', 'classifier', 'explainer']:
+                        layer_info = ml_status.get(layer, {})
+                        model_name = layer_info.get('model') or 'Not configured'
+                        is_ready = layer_info.get('ready', False)
+                        
+                        if is_ready:
+                            st.success(f"✓ {layer.title()}: {model_name}")
+                        elif model_name != 'Not configured':
+                            st.warning(f"⚠ {layer.title()}: {model_name}")
+                        else:
+                            st.info(f"○ {layer.title()}: Disabled")
                     
-                    if is_ready:
-                        st.success(f"✓ {layer.title()}: {model_name}")
-                    elif model_name != 'Not configured':
-                        st.warning(f"⚠ {layer.title()}: {model_name}")
-                    else:
-                        st.info(f"○ {layer.title()}: Disabled")
-                
-                # Show re-analyze button if results exist but ML wasn't used
-                if hasattr(st.session_state, 'results') and st.session_state.results:
-                    ml_pred = st.session_state.results.get('ml_prediction')
-                    if not ml_pred or not ml_pred.success:
-                        if st.button("🔄 Re-analyze with ML", use_container_width=True):
-                            symbol = st.session_state.get('symbol')
-                            current_profile = st.session_state.get('profile', profile)
-                            if symbol:
-                                data = app.fetch_data(symbol)
-                                if data:
-                                    st.session_state.data = data
-                                    st.session_state.results = app.run_analysis(symbol, current_profile, data)
-                                    st.rerun()
-        else:
-            st.info("ML disabled in config")
+                    # Show re-analyze button if results exist but ML wasn't used
+                    if hasattr(st.session_state, 'results') and st.session_state.results:
+                        ml_pred = st.session_state.results.get('ml_prediction')
+                        if not ml_pred or not ml_pred.success:
+                            if st.button("🔄 Re-analyze with ML", use_container_width=True):
+                                symbol = st.session_state.get('symbol')
+                                current_profile = st.session_state.get('profile', profile)
+                                if symbol:
+                                    data = app.fetch_data(symbol)
+                                    if data:
+                                        st.session_state.data = data
+                                        st.session_state.results = app.run_analysis(symbol, current_profile, data)
+                                        st.rerun()
+            else:
+                st.info("ML disabled in config")
         
+        st.markdown("---")
+        col_wiki, col_howto = st.columns(2)
+        with col_wiki:
+            if st.button("Wiki", use_container_width=True):
+                st.session_state.show_wiki = True
+        with col_howto:
+            if st.button("How-to?", use_container_width=True):
+                st.session_state.show_howto = True
+
         render_footer()
+
+    if st.session_state.get("show_wiki"):
+        _render_wiki_modal()
+        st.session_state.show_wiki = False
+    if st.session_state.get("show_howto"):
+        _render_howto_modal()
+        st.session_state.show_howto = False
     
     st.title("Stock Analysis")
     
