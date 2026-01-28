@@ -1,4 +1,4 @@
-"""Time Travel Mode for Indian Equity Intelligence."""
+"""Time Travel Mode for Stocron by RTR."""
 
 import pandas as pd
 from typing import Dict, Any, Optional, List

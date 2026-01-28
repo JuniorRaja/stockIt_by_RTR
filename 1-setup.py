@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
-Indian Equity Intelligence - First Run Setup Script
+Stocron by RTR - First Run Setup Script
+Tagline: Indian Equity Intelligence
+
 Downloads initial data and sets up the local database.
 
 Run with: python setup.py
@@ -220,7 +222,7 @@ def verify_setup():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Indian Equity Intelligence - Setup")
+    parser = argparse.ArgumentParser(description="Stocron by RTR - Setup")
     parser.add_argument('--full', action='store_true', help='Download all stocks (2000+)')
     parser.add_argument('--subset', type=int, default=50, help='Number of stocks to download (default: 50)')
     parser.add_argument('--years', type=int, default=10, help='Years of historical data (default: 10)')

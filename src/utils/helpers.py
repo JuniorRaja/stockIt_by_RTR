@@ -1,4 +1,4 @@
-"""Helper utilities for Indian Equity Intelligence."""
+"""Helper utilities for Stocron by RTR."""
 
 import numpy as np
 import pandas as pd

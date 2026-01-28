@@ -1,1 +1,1 @@
-# Tests for Indian Equity Intelligence
+# Tests for Stocron by RTR

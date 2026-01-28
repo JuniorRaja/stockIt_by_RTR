@@ -1,6 +1,6 @@
 """
-Indian Equity Intelligence - Main Application
-A local-first, explainable, long-term stock analysis tool.
+Stocron by RTR - Main Application
+Tagline: Indian Equity Intelligence
 
 Run with: streamlit run app.py
 """
@@ -40,7 +40,7 @@ from src.ml_models.base import ModelType
 
 logger = logging.getLogger(__name__)
 
-st.set_page_config(page_title="Indian Equity Intelligence", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Stocron by RTR", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
 <style>
@@ -396,8 +396,8 @@ def main():
         st.session_state.ml_init_attempted = True
     
     with st.sidebar:
-        st.title("📊 Indian Equity Intelligence")
-        st.caption("Local-first • Explainable • Long-term")
+        st.title("📊 Stocron by RTR")
+        st.caption("Local-first • Explainable")
         st.markdown("---")
         profile_dict = render_user_profile()
         profile = UserProfile(expected_return=profile_dict['expected_return'],
@@ -414,7 +414,7 @@ def main():
         
         # ML Models Status
         st.markdown("---")
-        st.subheader("🤖 ML Models")
+        st.subheader("ML Models")
         ml_status = app.get_ml_status()
         
         if ml_status.get('enabled'):
@@ -1025,7 +1025,8 @@ def main():
     
     else:
         st.markdown("""
-            ## Welcome to Indian Equity Intelligence
+            ## Welcome to Stocron by RTR
+            *The Indian Equity Intelligence*
             
             A **local-first**, **explainable** tool for long-term stock analysis.
             

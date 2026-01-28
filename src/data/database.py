@@ -1,4 +1,4 @@
-"""Database management for Indian Equity Intelligence."""
+"""Database management for Stocron by RTR."""
 
 import duckdb
 import pandas as pd

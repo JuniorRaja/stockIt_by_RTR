@@ -1,4 +1,4 @@
-"""Multi-source data ingestion for Indian Equity Intelligence.
+"""Multi-source data ingestion for Stocron by RTR.
 
 Priority:
 1. Local database/parquet files (for offline operation)

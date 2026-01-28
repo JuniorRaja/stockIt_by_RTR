@@ -1,4 +1,4 @@
-"""Red Flag Alert System for Indian Equity Intelligence."""
+"""Red Flag Alert System for Stocron by RTR."""
 
 import pandas as pd
 from typing import Dict, Any, Optional, List

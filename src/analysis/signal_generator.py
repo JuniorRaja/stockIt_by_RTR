@@ -1,4 +1,4 @@
-"""Signal Generation for Indian Equity Intelligence."""
+"""Signal Generation for Stocron by RTR."""
 
 import pandas as pd
 import numpy as np

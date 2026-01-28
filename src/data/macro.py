@@ -1,5 +1,5 @@
 """
-Macro-Economic Data Provider for Indian Equity Intelligence.
+Macro-Economic Data Provider for Stocron by RTR.
 
 Fetches and caches macro-economic indicators critical for Indian market analysis:
 - RBI Repo Rate

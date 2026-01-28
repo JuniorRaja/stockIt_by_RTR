@@ -1,4 +1,4 @@
-"""Market Behaviour Analysis for Indian Equity Intelligence."""
+"""Market Behaviour Analysis for Stocron by RTR."""
 
 import pandas as pd
 import numpy as np
