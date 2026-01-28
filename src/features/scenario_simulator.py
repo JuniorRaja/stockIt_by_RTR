@@ -1,4 +1,4 @@
-"""Scenario Simulator for Indian Equity Intelligence."""
+"""Scenario Simulator for Stocron by RTR."""
 
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass

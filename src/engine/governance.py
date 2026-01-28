@@ -1,4 +1,4 @@
-"""Legacy & Governance Analysis for Indian Equity Intelligence."""
+"""Legacy & Governance Analysis for Stocron by RTR."""
 
 import pandas as pd
 import numpy as np

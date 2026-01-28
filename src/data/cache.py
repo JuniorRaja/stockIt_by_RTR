@@ -1,4 +1,4 @@
-"""Parquet-based caching for Indian Equity Intelligence."""
+"""Parquet-based caching for Stocron by RTR."""
 
 import pandas as pd
 from pathlib import Path

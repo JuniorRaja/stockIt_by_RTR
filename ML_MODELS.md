@@ -1,6 +1,6 @@
 # ML Models Setup Guide
 
-This guide explains how to download and configure the ML models for Indian Equity Intelligence.
+This guide explains how to download and configure the ML models for Stocron by RTR (Indian Equity Intelligence).
 
 ## Easiest Way: Use the Download Script
 
@@ -395,7 +395,7 @@ Save as `download_models.sh` and run:
 #!/bin/bash
 set -e
 
-echo "=== Indian Equity Intelligence - Model Download Script ==="
+echo "=== Stocron by RTR - Model Download Script ==="
 
 # Create directories
 mkdir -p models/{forecaster,classifier,explainer}

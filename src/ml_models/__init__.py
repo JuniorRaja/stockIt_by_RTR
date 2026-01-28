@@ -1,5 +1,5 @@
 """
-ML Models Module for Indian Equity Intelligence
+ML Models Module for Stocron by RTR
 
 This module provides a modular ML architecture with three layers:
 - Layer 1 (Forecaster): Time-series prediction using Chronos-T5 or Lag-Llama

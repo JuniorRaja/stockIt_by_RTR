@@ -1,4 +1,4 @@
-"""Financial Trajectory Analysis for Indian Equity Intelligence."""
+"""Financial Trajectory Analysis for Stocron by RTR."""
 
 import pandas as pd
 import numpy as np

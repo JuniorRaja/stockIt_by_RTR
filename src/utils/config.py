@@ -1,4 +1,4 @@
-"""Configuration management for Indian Equity Intelligence."""
+"""Configuration management for Stocron by RTR."""
 
 import yaml
 from pathlib import Path

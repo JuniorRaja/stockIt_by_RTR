@@ -1,4 +1,4 @@
-# Indian Equity Intelligence
-# Local-first, explainable, long-term stock analysis tool
+# Stocron by RTR
+# Tagline: Indian Equity Intelligence
 
 __version__ = "1.0.0"

@@ -1,4 +1,4 @@
-"""Valuation Context Analysis for Indian Equity Intelligence."""
+"""Valuation Context Analysis for Stocron by RTR."""
 
 import pandas as pd
 import numpy as np

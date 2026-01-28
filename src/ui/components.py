@@ -1,4 +1,4 @@
-"""Streamlit UI Components for Indian Equity Intelligence."""
+"""Streamlit UI Components for Stocron by RTR."""
 
 import streamlit as st
 from typing import Dict, Any, Optional, List, Callable
@@ -139,8 +139,7 @@ def render_footer():
     st.markdown("---")
     st.markdown("""
         <div style="text-align:center; color:gray; font-size:0.8em;">
-            <p><strong>Indian Equity Intelligence</strong> - Local-first Stock Analysis</p>
-            <p>Decision support, not advice. Always do your own research.</p>
-            <p>Data: Yahoo Finance, NSE | No external data transmission</p>
+            <p>Decision support, not advice. <strong>Always do your own research.</strong></p>
+            <p>Yahoo Finance | NSE</p>
         </div>
     """, unsafe_allow_html=True)

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Indian Equity Intelligence - Model Download Script
+Stocron by RTR - Model Download Script
+Tagline: Indian Equity Intelligence
 
 This script helps you download the required ML models based on your PC specifications.
 Run with: python download_models.py
@@ -40,7 +41,7 @@ def get_system_info():
 def print_header():
     """Print welcome header."""
     print("\n" + "=" * 60)
-    print("  Indian Equity Intelligence - Model Downloader")
+    print("  Stocron by RTR - Model Downloader")
     print("=" * 60)
 
 

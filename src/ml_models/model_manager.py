@@ -394,7 +394,7 @@ def create_download_script(output_path: str = "download_models.sh") -> str:
     
     lines = [
         "#!/bin/bash",
-        "# Indian Equity Intelligence - Model Download Script",
+        "# Stocron by RTR - Model Download Script",
         "# Generated automatically - run the commands you need",
         "",
         "set -e",

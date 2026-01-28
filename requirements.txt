@@ -1,4 +1,4 @@
-# Indian Equity Intelligence - Dependencies
+# Stocron by RTR - Dependencies
 # Install with: pip install -r requirements.txt
 
 # Web Framework

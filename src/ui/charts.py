@@ -1,4 +1,4 @@
-"""Chart components for Indian Equity Intelligence."""
+"""Chart components for Stocron by RTR."""
 
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots

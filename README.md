@@ -1,4 +1,6 @@
-# Indian Equity Intelligence
+# Stocron by RTR
+
+*The Indian Equity Intelligence*
 
 A **local‑first, explainable stock research engine** for Indian equities. It combines governance, fundamentals, valuation, market behavior, macro regimes, and ML into one signal—while always showing the downside first so decisions stay grounded.
 
@@ -30,8 +32,8 @@ This is not a tip‑sheet. It’s a decision‑support system built for serious 
 
 ```bash
 # 1) Clone
-git clone https://github.com/your-repo/indian-equity-intelligence.git
-cd indian-equity-intelligence
+git clone https://github.com/RTR95/stockIt_by_RTR.git
+cd stockIt_by_RTR
 
 # 2) Install dependencies
 pip install -r requirements.txt

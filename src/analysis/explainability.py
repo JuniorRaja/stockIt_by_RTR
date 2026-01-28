@@ -1,4 +1,4 @@
-"""Explainability Engine for Indian Equity Intelligence."""
+"""Explainability Engine for Stocron by RTR."""
 
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass, field
