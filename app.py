@@ -47,6 +47,9 @@ st.markdown("""
     .main { padding: 0 1rem; }
     .stTabs [data-baseweb="tab-list"] { gap: 24px; }
     div[data-testid="metric-container"] { background-color: #262730; padding: 10px; border-radius: 5px; }
+    /* Widen dialog overlays (Streamlit v1.30+) */
+    div[role="dialog"] { width: 90vw !important; max-width: 90vw !important; }
+    div[role="dialog"] > div { max-height: 90vh; overflow-y: auto; }
 </style>
 """, unsafe_allow_html=True)
 
