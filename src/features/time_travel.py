@@ -28,6 +28,8 @@ class TimeTravelResult:
     red_flags_at_cutoff: List[Dict]
     actual_outcome: Optional[Dict[str, Any]]
     hindsight_analysis: Optional[str]
+    hindsight_signal: Optional[str] = None  # What signal SHOULD have been based on actual returns
+    signal_accuracy: Optional[str] = None  # CORRECT, PARTIAL, INCORRECT
 
 
 class TimeTravelEngine:
@@ -75,15 +77,18 @@ class TimeTravelEngine:
         
         outcome = None
         hindsight = None
+        hindsight_signal = None
+        signal_accuracy = None
         if include_outcome:
             outcome = self._calc_outcome(price_history, cutoff)
-            hindsight = self._generate_hindsight(signal, outcome)
+            hindsight, hindsight_signal, signal_accuracy = self._generate_hindsight(signal, outcome)
         
         return TimeTravelResult(
             cutoff_date=cutoff, signal_at_cutoff=signal, governance_at_cutoff=gov,
             financial_at_cutoff=fin, valuation_at_cutoff=val, market_at_cutoff=mkt,
             red_flags_at_cutoff=[{'type': r.flag_type, 'severity': r.severity, 'description': r.description} for r in red_flags],
-            actual_outcome=outcome, hindsight_analysis=hindsight
+            actual_outcome=outcome, hindsight_analysis=hindsight,
+            hindsight_signal=hindsight_signal, signal_accuracy=signal_accuracy
         )
     
     def _filter(self, df: pd.DataFrame, cutoff: datetime) -> pd.DataFrame:
@@ -135,32 +140,109 @@ class TimeTravelEngine:
         
         return outcome
     
-    def _generate_hindsight(self, signal, outcome: Optional[Dict]) -> str:
-        if not outcome:
-            return "Insufficient data for hindsight."
-        three_y = outcome.get('3y', {}).get('return', 0)
-        sig = signal.signal
+    def _generate_hindsight(self, signal, outcome: Optional[Dict]) -> tuple:
+        """
+        Generate hindsight analysis based on actual returns.
         
-        if sig == "BUY":
-            if three_y > 50:
-                return f"CORRECT: BUY validated. Stock returned {three_y:.1f}% over 3 years."
-            elif three_y > 0:
-                return f"PARTIAL: BUY had modest {three_y:.1f}% return over 3 years."
+        Returns:
+            tuple: (analysis_text, hindsight_signal, accuracy)
+        
+        Hindsight Signal Logic (based on 3Y returns, or 1Y if 3Y not available):
+        - BUY: Return > 50% (3Y) or > 15% (1Y) - significant wealth creation
+        - HOLD: Return 0-50% (3Y) or 0-15% (1Y) - modest returns
+        - AVOID: Return < 0% - loss
+        - SELL: Return < -30% - significant loss
+        """
+        if not outcome:
+            return "Insufficient data for hindsight.", None, None
+        
+        # Use 3Y return if available, else 1Y
+        three_y = outcome.get('3y', {}).get('return')
+        one_y = outcome.get('1y', {}).get('return')
+        five_y = outcome.get('5y', {}).get('return')
+        
+        # Determine best available return for analysis
+        if three_y is not None:
+            primary_return = three_y
+            period = "3Y"
+        elif one_y is not None:
+            primary_return = one_y
+            period = "1Y"
+        else:
+            return "Insufficient data for hindsight.", None, None
+        
+        # Determine what the signal SHOULD have been based on actual returns
+        if period == "3Y":
+            # 3-year thresholds (cumulative)
+            if primary_return > 100:  # > 100% in 3 years (~26% CAGR)
+                hindsight_signal = "STRONG BUY"
+            elif primary_return > 50:  # > 50% in 3 years (~14% CAGR)
+                hindsight_signal = "BUY"
+            elif primary_return > 20:  # > 20% in 3 years (~6% CAGR)
+                hindsight_signal = "HOLD"
+            elif primary_return > 0:
+                hindsight_signal = "WEAK HOLD"
+            elif primary_return > -20:
+                hindsight_signal = "AVOID"
             else:
-                return f"INCORRECT: BUY didn't work. Stock returned {three_y:.1f}%."
-        elif sig == "AVOID BUYING":
-            if three_y < 0:
-                return f"CORRECT: AVOID validated. Stock lost {abs(three_y):.1f}%."
-            elif three_y < 20:
-                return f"PARTIAL: AVOID reasonable. Stock returned only {three_y:.1f}%."
+                hindsight_signal = "SELL"
+        else:
+            # 1-year thresholds
+            if primary_return > 30:
+                hindsight_signal = "STRONG BUY"
+            elif primary_return > 15:
+                hindsight_signal = "BUY"
+            elif primary_return > 5:
+                hindsight_signal = "HOLD"
+            elif primary_return > 0:
+                hindsight_signal = "WEAK HOLD"
+            elif primary_return > -15:
+                hindsight_signal = "AVOID"
             else:
-                return f"INCORRECT: AVOID was wrong. Stock returned {three_y:.1f}%."
-        return f"Signal: {sig}. 3Y return: {three_y:.1f}%"
+                hindsight_signal = "SELL"
+        
+        original_sig = signal.signal
+        
+        # Determine accuracy
+        # Map signals to numeric scale for comparison
+        signal_rank = {"STRONG BUY": 5, "BUY": 4, "HOLD": 3, "WEAK HOLD": 2.5, "AVOID BUYING": 2, "AVOID": 2, "SELL / EXIT": 1, "SELL": 1}
+        
+        original_rank = signal_rank.get(original_sig, 3)
+        hindsight_rank = signal_rank.get(hindsight_signal, 3)
+        
+        diff = abs(original_rank - hindsight_rank)
+        
+        if diff <= 0.5:
+            accuracy = "CORRECT"
+        elif diff <= 1.5:
+            accuracy = "PARTIAL"
+        else:
+            accuracy = "INCORRECT"
+        
+        # Generate analysis text
+        returns_summary = []
+        if one_y is not None:
+            returns_summary.append(f"1Y: {one_y:+.1f}%")
+        if three_y is not None:
+            returns_summary.append(f"3Y: {three_y:+.1f}%")
+        if five_y is not None:
+            returns_summary.append(f"5Y: {five_y:+.1f}%")
+        
+        returns_text = ", ".join(returns_summary)
+        
+        if accuracy == "CORRECT":
+            analysis = f"✓ Signal was {accuracy}. Original: {original_sig}, Optimal: {hindsight_signal}. Returns: {returns_text}"
+        elif accuracy == "PARTIAL":
+            analysis = f"◐ Signal was {accuracy}. Original: {original_sig}, Optimal: {hindsight_signal}. Returns: {returns_text}"
+        else:
+            analysis = f"✗ Signal was {accuracy}. Original: {original_sig}, but should have been {hindsight_signal}. Returns: {returns_text}"
+        
+        return analysis, hindsight_signal, accuracy
     
     def get_available_cutoffs(self, prices: pd.DataFrame) -> List[int]:
         """
         Generate available cutoff years based on the stock's actual data range.
-        Shows cutoffs from the stock's starting year, spaced appropriately.
+        Shows ALL years from the stock's starting year to present.
         """
         if prices.empty:
             return []
@@ -171,38 +253,16 @@ class TimeTravelEngine:
         max_year = df['date'].max().year
         current_year = datetime.now().year
         
-        # Need at least 2 years of post-cutoff data for meaningful analysis
-        latest_cutoff = min(max_year - 2, current_year - 1)
+        # Need at least 1 year of post-cutoff data for meaningful analysis
+        latest_cutoff = min(max_year - 1, current_year - 1)
         
-        # Generate cutoffs dynamically based on data range
-        cutoffs = []
+        # Need at least 1 year of pre-cutoff data
+        earliest_cutoff = min_year + 1
         
-        # Start from stock's first year (rounded to nearest significant year)
-        # Add the actual starting year if it has enough history
-        if min_year <= latest_cutoff:
-            # Add starting year + 1 (need some data before cutoff too)
-            first_cutoff = min_year + 1
-            if first_cutoff <= latest_cutoff:
-                cutoffs.append(first_cutoff)
+        if earliest_cutoff > latest_cutoff:
+            return []
         
-        # Add years from default list that fall within range
-        for year in self.DEFAULT_CUTOFFS:
-            if min_year < year <= latest_cutoff and year not in cutoffs:
-                cutoffs.append(year)
-        
-        # Ensure we have some spacing - add intermediate years if range is large
-        if min_year < 2005 and 2005 <= latest_cutoff and 2005 not in cutoffs:
-            cutoffs.append(2005)
-        if min_year < 2010 and 2010 <= latest_cutoff and 2010 not in cutoffs:
-            cutoffs.append(2010)
-        
-        # Sort and return
-        cutoffs = sorted(set(cutoffs))
-        
-        # Limit to reasonable number of options (max 10)
-        if len(cutoffs) > 10:
-            # Keep first, last, and evenly spaced in between
-            step = len(cutoffs) // 8
-            cutoffs = cutoffs[::step] if step > 1 else cutoffs[:10]
+        # Generate ALL years from stock's start to latest valid cutoff
+        cutoffs = list(range(earliest_cutoff, latest_cutoff + 1))
         
         return cutoffs

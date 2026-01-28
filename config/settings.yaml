@@ -1,70 +1,46 @@
-# Indian Equity Intelligence - Configuration Settings
-# All thresholds and parameters are configurable here
-
-# Application Settings
 app:
-  name: "Indian Equity Intelligence"
-  version: "1.0.0"
+  name: Indian Equity Intelligence
+  version: 1.0.0
   debug: false
-  offline_mode: false  # Set to true after initial setup
-
-# Data Sources Configuration
+  offline_mode: false
 data_sources:
-  # Priority order for data fetching (highest first)
   priority:
-    - yahoo_finance
-    - nse_tools
-  
-  # Yahoo Finance settings
+  - yahoo_finance
+  - nse_tools
   yahoo_finance:
     enabled: true
-    suffix: ".NS"  # NSE suffix
+    suffix: .NS
     max_retries: 3
     timeout: 30
-  
-  # NSE Tools settings
   nse_tools:
     enabled: true
     max_retries: 3
-
-# Database Settings
 database:
-  type: "duckdb"
-  path: "data/db/equity_intelligence.db"
-  cache_dir: "data/cache"
-
-# Analysis Thresholds
+  type: duckdb
+  path: data/db/equity_intelligence.db
+  cache_dir: data/cache
 thresholds:
-  # Legacy & Governance
   governance:
     min_years_listed: 5
     min_promoter_holding: 25.0
     max_pledge_ratio: 20.0
     dividend_consistency_years: 5
     auditor_change_warning_years: 3
-  
-  # Financial Trajectory
   financial:
     min_revenue_cagr_3y: 10.0
     min_revenue_cagr_5y: 8.0
     min_roce: 12.0
     min_fcf_yield: 2.0
     max_debt_to_equity: 1.5
-  
-  # Valuation Context
   valuation:
     pe_percentile_expensive: 80
     pe_percentile_cheap: 20
     pb_max_growth: 5.0
     pb_max_value: 2.0
-  
-  # Market Behaviour
   market:
     max_drawdown_threshold: 50.0
     recovery_months_warning: 24
     volatility_high_threshold: 40.0
-
-# Risk Profiles
 risk_profiles:
   low:
     max_volatility: 25.0
@@ -72,145 +48,84 @@ risk_profiles:
     min_promoter_holding: 50.0
     max_debt_equity: 0.5
     min_years_profitable: 7
-  
   medium:
     max_volatility: 35.0
     min_dividend_yield: 0.5
     min_promoter_holding: 35.0
     max_debt_equity: 1.0
     min_years_profitable: 5
-  
   high:
     max_volatility: 50.0
     min_dividend_yield: 0.0
     min_promoter_holding: 25.0
     max_debt_equity: 2.0
     min_years_profitable: 3
-
-# Signal Generation
 signals:
   weights:
     governance: 0.25
-    financial: 0.30
+    financial: 0.3
     valuation: 0.25
     market_behaviour: 0.15
     ml_context: 0.05
-  
   buy_threshold: 70
   hold_threshold: 50
   avoid_threshold: 30
-
-# Red Flag Configuration
 red_flags:
-  auditor_resignation: 
-    severity: "high"
+  auditor_resignation:
+    severity: high
     penalty: 20
-  
   promoter_pledge_increase:
     threshold: 10.0
-    severity: "high"
+    severity: high
     penalty: 15
-  
   promoter_stake_reduction:
     threshold: 5.0
-    severity: "medium"
+    severity: medium
     penalty: 10
-  
   earnings_without_cash:
     threshold: 0.5
-    severity: "high"
+    severity: high
     penalty: 20
-  
   negative_fcf_streak:
     years: 3
-    severity: "medium"
+    severity: medium
     penalty: 15
-
-# ML Model Configuration
-# ========================
-# This section configures the 3-layer ML architecture:
-# - Layer 1 (Forecaster): Time-series prediction models
-# - Layer 2 (Classifier): Signal classification models  
-# - Layer 3 (Explainer): LLM-based explanation models
-
 ml_config:
-  # Enable/disable ML-enhanced analysis
   enabled: true
-  
-  # Auto-initialize ML models when app starts (recommended)
-  # Set to false if you want manual control via sidebar button
   auto_initialize: true
-  
-  # Models directory (relative to project root)
-  models_dir: "models"
-  
-  # Device for inference: "auto", "cpu", "cuda", "mps"
-  device: "auto"
-  
-  # ===== Layer 1: Time-Series Forecaster =====
-  # Options: "chronos-t5-tiny", "chronos-t5-small", "chronos-t5-base", "lag-llama", null
-  # - chronos-t5-tiny: Fastest, ~100MB, basic accuracy
-  # - chronos-t5-small: Balanced, ~200MB, good accuracy
-  # - chronos-t5-base: Best accuracy, ~500MB (RECOMMENDED)
-  # - lag-llama: Probabilistic forecasts, ~1GB, uncertainty quantification
-  # - null: Disable forecasting
+  models_dir: models
+  device: auto
   forecaster:
-    model: "chronos-t5-base"
+    model: chronos-t5-tiny
     horizon_days: 30
     num_samples: 100
-  
-  # ===== Layer 2: Signal Classifier =====
-  # Options: "lightgbm", "catboost", "xgboost", null
-  # - lightgbm: Fast, low memory (RECOMMENDED)
-  # - catboost: Best with categorical features
-  # - xgboost: Battle-tested alternative
-  # - null: Use rule-based signals only
   classifier:
-    model: "lightgbm"
-    # Training configuration
+    model: lightgbm
     n_estimators: 500
     learning_rate: 0.05
     max_depth: 6
     min_samples_for_training: 100
-  
-  # ===== Layer 3: LLM Explainer =====
-  # Options: "qwen2.5-3b", "qwen2.5-7b", "phi-3-mini", null
-  # - qwen2.5-3b: Good quality, ~2GB RAM (RECOMMENDED)
-  # - qwen2.5-7b: Better quality, ~4.5GB RAM
-  # - phi-3-mini: Microsoft model, ~2.3GB RAM
-  # - null: Use rule-based explanations
   explainer:
-    model: "qwen2.5-3b"
+    model: null
     context_length: 2048
     temperature: 0.7
-  
-  # Weight for ML score in final composite (0.0 to 1.0)
-  # This replaces the simple ml_context weight
   ml_weight_in_composite: 0.15
-  
-  # Feature engineering settings
   features:
     include_technical: true
     include_forecast: true
-  
-  # Legacy settings (for backward compatibility)
-  model_type: "xgboost"
+  model_type: xgboost
   n_clusters: 8
   min_samples_for_training: 100
-
-# Time Travel Mode
 time_travel:
   min_year: 2005
   available_cutoffs:
-    - 2010
-    - 2015
-    - 2018
-    - 2020
-    - 2022
-
-# UI Settings
+  - 2010
+  - 2015
+  - 2018
+  - 2020
+  - 2022
 ui:
-  theme: "dark"
+  theme: dark
   charts_height: 400
   default_holding_tenure: 5
   default_expected_return: 15.0

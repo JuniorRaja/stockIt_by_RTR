@@ -280,7 +280,7 @@ class MLEnsemble:
     def predict(
         self,
         symbol: str,
-        prices: pd.Series,
+        prices: Union[pd.Series, pd.DataFrame],
         governance_result: Optional[Any] = None,
         financial_result: Optional[Any] = None,
         valuation_result: Optional[Any] = None,
@@ -295,7 +295,7 @@ class MLEnsemble:
         
         Args:
             symbol: Stock symbol
-            prices: Historical closing prices
+            prices: Historical closing prices (Series or DataFrame with 'close' column)
             governance_result: Output from GovernanceAnalyzer
             financial_result: Output from FinancialAnalyzer
             valuation_result: Output from ValuationAnalyzer
@@ -307,6 +307,18 @@ class MLEnsemble:
         """
         start_time = time.time()
         prediction = MLPrediction(symbol=symbol, success=False)
+        
+        # Convert DataFrame to Series if needed
+        if isinstance(prices, pd.DataFrame):
+            if 'close' in prices.columns:
+                price_series = prices['close']
+            elif 'Close' in prices.columns:
+                price_series = prices['Close']
+            else:
+                # Assume first numeric column
+                price_series = prices.select_dtypes(include=[np.number]).iloc[:, 0]
+        else:
+            price_series = prices
         
         if not self._initialized:
             success, messages = self.initialize()
@@ -322,7 +334,7 @@ class MLEnsemble:
         if self._forecaster and self._forecaster.is_ready:
             try:
                 forecast_result = self._forecaster.forecast(
-                    prices,
+                    price_series,
                     horizon=self.config.forecast_horizon,
                     num_samples=self.config.num_forecast_samples
                 )
@@ -334,7 +346,7 @@ class MLEnsemble:
                     
                     # Extract price predictions
                     if forecast_result.predictions is not None:
-                        current_price = float(prices.iloc[-1])
+                        current_price = float(price_series.iloc[-1])
                         if len(forecast_result.predictions) >= 5:
                             prediction.price_prediction_5d = float(forecast_result.predictions[4])
                         if len(forecast_result.predictions) >= 30:
@@ -349,7 +361,7 @@ class MLEnsemble:
         # Step 2: Extract features
         feature_set = self._feature_engineer.extract_features(
             symbol=symbol,
-            prices=prices,
+            prices=price_series,
             governance_result=governance_result,
             financial_result=financial_result,
             valuation_result=valuation_result,

@@ -64,61 +64,93 @@ class ExplainabilityEngine:
         return "\n".join(lines)
     
     def _generate_why_not_buy(self, profile: UserProfile, gov, fin, val, mkt, result: SignalResult, red_flags: List) -> List[str]:
-        """MANDATORY: Generate 'Why NOT to buy' - shown even for BUY signals."""
+        """
+        MANDATORY: Generate 'Why NOT to buy' - shown even for BUY signals.
+        Only includes stock-specific concerns, no generic advice.
+        """
         reasons = []
         
-        # Return gap
+        # Return gap - only if significant
         ret = result.user_profile_match.get('return_expectation', {})
-        if not ret.get('meets', True):
-            reasons.append(f"RETURN GAP: Expected {ret['expected']}%, estimated {ret['estimated']}%. Gap: {ret['gap']}%")
+        if not ret.get('meets', True) and ret.get('gap', 0) > 3:
+            reasons.append(f"RETURN GAP: You expect {ret['expected']}% but estimated return is {ret['estimated']}% (gap: {ret['gap']}%)")
         
-        # Risk mismatch
+        # Risk mismatch - only if significant
         risk = result.user_profile_match.get('risk_match', {})
         if not risk.get('within_tolerance', True):
-            reasons.append(f"RISK MISMATCH: Volatility {risk['stock_vol']:.0f}% exceeds your tolerance ({risk['max_acceptable']:.0f}%)")
+            reasons.append(f"RISK MISMATCH: Stock volatility {risk['stock_vol']:.0f}% exceeds your tolerance ({risk['max_acceptable']:.0f}%)")
         
-        # Governance
+        # Governance concerns
         for rf in gov.red_flags:
             reasons.append(f"GOVERNANCE: {rf}")
-        if gov.promoter_holding_trend == 'decreasing':
-            reasons.append(f"PROMOTER: Holding declining ({gov.details.get('promoter_analysis', {}).get('change_5y', 0):.1f}% over 5Y)")
-        if gov.pledge_ratio > 10:
-            reasons.append(f"PLEDGE: {gov.pledge_ratio:.1f}% shares pledged - forced selling risk")
         
-        # Financial
+        if hasattr(gov, 'promoter_holding_trend') and gov.promoter_holding_trend == 'decreasing':
+            change = gov.details.get('promoter_analysis', {}).get('change_5y', 0) if gov.details else 0
+            if change < -3:  # Only flag if significant decline
+                reasons.append(f"PROMOTER SELLING: Holding declined {abs(change):.1f}% over 5 years")
+        
+        if gov.pledge_ratio and gov.pledge_ratio > 10:
+            reasons.append(f"PLEDGE RISK: {gov.pledge_ratio:.1f}% of promoter shares pledged - forced selling risk in market downturns")
+        elif gov.pledge_ratio and gov.pledge_ratio > 5:
+            reasons.append(f"PLEDGE CONCERN: {gov.pledge_ratio:.1f}% promoter pledge")
+        
+        # Financial concerns
         for rf in fin.red_flags:
             reasons.append(f"FINANCIAL: {rf}")
-        if fin.roce_current and fin.roce_current < 12:
-            reasons.append(f"CAPITAL: ROCE {fin.roce_current:.1f}% below cost of capital")
-        if fin.debt_to_equity and fin.debt_to_equity > 1:
-            reasons.append(f"LEVERAGE: D/E {fin.debt_to_equity:.2f}x creates financial risk")
         
-        # Valuation
+        if fin.roce_current and fin.roce_current < 10:
+            reasons.append(f"POOR CAPITAL EFFICIENCY: ROCE of {fin.roce_current:.1f}% is below cost of capital")
+        
+        if fin.debt_to_equity and fin.debt_to_equity > 1.5:
+            reasons.append(f"HIGH LEVERAGE: Debt-to-Equity of {fin.debt_to_equity:.2f}x creates financial risk")
+        elif fin.debt_to_equity and fin.debt_to_equity > 1:
+            reasons.append(f"MODERATE LEVERAGE: D/E ratio of {fin.debt_to_equity:.2f}x")
+        
+        if fin.earnings_quality and fin.earnings_quality < 0.5:
+            reasons.append(f"EARNINGS QUALITY: Cash flow conversion is poor ({fin.earnings_quality:.0%})")
+        
+        # Growth concerns
+        if fin.revenue_cagr_5y and fin.revenue_cagr_5y < 5:
+            reasons.append(f"SLOW GROWTH: Revenue growing at only {fin.revenue_cagr_5y:.1f}% annually")
+        
+        # Valuation concerns
         if val.stress_level in ['high', 'extreme']:
-            reasons.append(f"VALUATION: Stress level '{val.stress_level}' - high downside risk")
-        if val.pe_percentile_own and val.pe_percentile_own > 75:
-            reasons.append(f"EXPENSIVE: PE at {val.pe_percentile_own:.0f}th percentile of history")
-        if val.peg_ratio and val.peg_ratio > 2:
-            reasons.append(f"PEG: {val.peg_ratio:.2f} - paying premium for growth")
+            reasons.append(f"VALUATION STRESS: Stock at '{val.stress_level}' stress level - high downside risk")
         
-        # Market
-        if mkt.max_drawdown > 40:
-            reasons.append(f"DRAWDOWN: Stock fell {mkt.max_drawdown:.0f}% historically")
+        if val.pe_percentile_own and val.pe_percentile_own > 80:
+            reasons.append(f"EXPENSIVE: PE at {val.pe_percentile_own:.0f}th percentile of its own history")
+        elif val.pe_percentile_own and val.pe_percentile_own > 70:
+            reasons.append(f"ABOVE AVERAGE VALUATION: PE at {val.pe_percentile_own:.0f}th percentile")
+        
+        if val.peg_ratio and val.peg_ratio > 2.5:
+            reasons.append(f"HIGH PEG: PEG ratio of {val.peg_ratio:.2f} - paying premium for growth")
+        
+        # Market behavior concerns
+        if mkt.max_drawdown and mkt.max_drawdown > 50:
+            reasons.append(f"CRASH HISTORY: Stock fell {mkt.max_drawdown:.0f}% in past - can you handle such volatility?")
+        elif mkt.max_drawdown and mkt.max_drawdown > 40:
+            reasons.append(f"HIGH DRAWDOWN: Stock has fallen {mkt.max_drawdown:.0f}% historically")
+        
         if mkt.volatility_regime in ['high', 'extreme']:
-            reasons.append(f"VOLATILITY: {mkt.volatility_regime} regime ({mkt.volatility_1y:.0f}%)")
-        if mkt.beta and mkt.beta > 1.3:
-            reasons.append(f"BETA: {mkt.beta:.2f} - amplifies market moves")
+            reasons.append(f"HIGH VOLATILITY: Currently in {mkt.volatility_regime} volatility regime ({mkt.volatility_1y:.0f}% annual)")
         
-        # Red flags
+        if mkt.beta and mkt.beta > 1.5:
+            reasons.append(f"HIGH BETA: Beta of {mkt.beta:.2f} - stock moves 1.5x the market")
+        elif mkt.beta and mkt.beta > 1.3:
+            reasons.append(f"ELEVATED BETA: Beta of {mkt.beta:.2f} - amplifies market moves")
+        
+        # Red flags from detection
         for f in red_flags:
-            reasons.append(f"RED FLAG ({f.get('severity', 'medium').upper()}): {f.get('description', 'Issue detected')}")
+            desc = f.get('description', 'Issue detected')
+            if desc not in [r.split(': ', 1)[-1] if ': ' in r else r for r in reasons]:
+                reasons.append(f"⚠️ {f.get('severity', 'medium').upper()}: {desc}")
         
-        # Always include
-        reasons.append("TIMING: Even good stocks can have poor timing. Markets can stay irrational.")
-        reasons.append("DATA LIMITS: Analysis uses available data which may be incomplete or delayed.")
-        
-        if result.signal == Signal.BUY and len(reasons) < 4:
-            reasons.append("EVEN FOR BUYS: No investment is risk-free. Position sizing and diversification matter.")
+        # Only add generic warning if no specific concerns found
+        if len(reasons) == 0:
+            if result.signal == Signal.BUY:
+                reasons.append("No specific concerns identified, but no investment is risk-free")
+            else:
+                reasons.append("Multiple minor concerns contribute to cautious rating")
         
         return reasons
     
@@ -146,14 +178,31 @@ class ExplainabilityEngine:
         return risks
     
     def _identify_invalidators(self, result: SignalResult, fin) -> List[str]:
-        return [
-            "Revenue growth slowing below historical average for 2+ quarters",
-            "ROCE falling below cost of capital (10-12%)",
+        """Generate stock-specific thesis invalidators based on current strengths."""
+        invalidators = []
+        
+        # Based on financial strength, identify what could break the thesis
+        if fin.revenue_cagr_5y and fin.revenue_cagr_5y > 10:
+            invalidators.append(f"Revenue growth slowing to below {max(5, fin.revenue_cagr_5y - 5):.0f}% for 2+ quarters")
+        
+        if fin.roce_current and fin.roce_current > 15:
+            invalidators.append(f"ROCE declining from {fin.roce_current:.0f}% to below 12%")
+        
+        if fin.earnings_quality and fin.earnings_quality > 0.7:
+            invalidators.append("Cash flow conversion deteriorating significantly")
+        
+        # Standard invalidators that apply to most stocks
+        invalidators.extend([
             "Promoter selling shares or increasing pledge significantly",
-            "Auditor change or qualification in audit report",
-            "Broader market correction or sector rotation",
-            "Regulatory changes affecting business model"
-        ]
+            "Auditor resignation or qualification in audit report",
+            "Key management departures or governance concerns",
+        ])
+        
+        # Add industry-specific risks
+        if fin.debt_to_equity and fin.debt_to_equity > 0.5:
+            invalidators.append("Interest rates rising significantly impacting profitability")
+        
+        return invalidators[:6]  # Limit to 6 most relevant
     
     def _assess_data_quality(self) -> List[str]:
         return ["Data quality appears adequate for analysis"]

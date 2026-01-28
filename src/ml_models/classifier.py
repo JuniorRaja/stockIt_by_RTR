@@ -195,17 +195,24 @@ class LightGBMClassifier(SignalClassifier):
             self._status = ModelStatus.LOADING
             
             with open(model_path, 'rb') as f:
-                self._model = pickle.load(f)
+                loaded = pickle.load(f)
             
-            # Load metadata
-            metadata_path = self.config.model_path / "metadata.json"
-            if metadata_path.exists():
-                with open(metadata_path, 'r') as f:
-                    metadata = json.load(f)
-                    self._feature_names = metadata.get("feature_names", [])
+            # Handle both formats: dict (from train_classifier.py) or model directly
+            if isinstance(loaded, dict):
+                self._model = loaded.get('model')
+                self._feature_names = loaded.get('feature_names', [])
+                self._logger.info(f"Loaded classifier from training script (type: {loaded.get('model_type', 'unknown')})")
+            else:
+                self._model = loaded
+                # Load metadata from separate file
+                metadata_path = self.config.model_path / "metadata.json"
+                if metadata_path.exists():
+                    with open(metadata_path, 'r') as f:
+                        metadata = json.load(f)
+                        self._feature_names = metadata.get("feature_names", [])
             
             self._status = ModelStatus.READY
-            self._logger.info("LightGBM model loaded successfully")
+            self._logger.info("Classifier model loaded successfully")
             return True
             
         except Exception as e:
@@ -351,7 +358,7 @@ class LightGBMClassifier(SignalClassifier):
             )
     
     def classify(self, features: Dict[str, float]) -> ClassifierOutput:
-        """Classify using LightGBM model."""
+        """Classify using LightGBM or sklearn model."""
         start_time = time.time()
         
         if not self.is_ready:
@@ -369,29 +376,44 @@ class LightGBMClassifier(SignalClassifier):
             # Prepare features
             X = self._prepare_features(features)
             
-            # Predict probabilities
-            probabilities = self._model.predict(X)[0]  # Shape: (num_classes,)
+            # Predict probabilities (handle both LightGBM and sklearn)
+            if hasattr(self._model, 'predict_proba'):
+                # sklearn style (GradientBoosting, etc.)
+                probabilities = self._model.predict_proba(X)[0]
+            else:
+                # LightGBM Booster style
+                probabilities = self._model.predict(X)[0]
             
             # Get predicted class
             predicted_idx = np.argmax(probabilities)
-            predicted_signal = IDX_TO_SIGNAL[predicted_idx]
-            confidence = probabilities[predicted_idx]
+            predicted_signal = IDX_TO_SIGNAL.get(predicted_idx, "HOLD")
+            confidence = float(probabilities[predicted_idx])
             
             # Signal probabilities
-            signal_probs = {
-                SIGNAL_LABELS[i]: float(probabilities[i])
-                for i in range(len(SIGNAL_LABELS))
-            }
+            signal_probs = {}
+            for i in range(min(len(SIGNAL_LABELS), len(probabilities))):
+                signal_probs[SIGNAL_LABELS[i]] = float(probabilities[i])
             
-            # Get feature importance for this prediction
-            importance = self._model.feature_importance(importance_type='gain')
-            total_importance = importance.sum()
-            if total_importance > 0:
-                feature_importance = {
-                    name: float(imp / total_importance)
-                    for name, imp in zip(self._feature_names, importance)
-                }
-            else:
+            # Get feature importance (handle both model types)
+            feature_importance = {}
+            try:
+                if hasattr(self._model, 'feature_importance'):
+                    # LightGBM Booster
+                    importance = self._model.feature_importance(importance_type='gain')
+                elif hasattr(self._model, 'feature_importances_'):
+                    # sklearn style
+                    importance = self._model.feature_importances_
+                else:
+                    importance = None
+                
+                if importance is not None and len(importance) > 0:
+                    total_importance = importance.sum()
+                    if total_importance > 0:
+                        feature_importance = {
+                            name: float(imp / total_importance)
+                            for name, imp in zip(self._feature_names, importance)
+                        }
+            except Exception:
                 feature_importance = {}
             
             inference_time = (time.time() - start_time) * 1000

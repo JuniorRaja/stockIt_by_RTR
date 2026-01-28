@@ -5,7 +5,7 @@ This guide explains how to download and configure the ML models for Indian Equit
 ## Easiest Way: Use the Download Script
 
 ```bash
-python download_models.py
+python 3-download_models.py
 ```
 
 This interactive script will:
