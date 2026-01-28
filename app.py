@@ -135,12 +135,13 @@ class IndianEquityIntelligence:
             if not info:
                 st.error(f"Could not find: {symbol}")
                 return None
-            prices = self.data_manager.get_price_history(symbol, years=10)
+            # Fetch up to 30 years of history (or all available)
+            prices = self.data_manager.get_price_history(symbol, years=30)
             if prices is None or prices.empty:
                 st.error(f"No price history for {symbol}")
                 return None
             financials = self.data_manager.get_financials(symbol) or {}
-            nifty = self.data_manager.get_price_history("NIFTY", years=10)
+            nifty = self.data_manager.get_price_history("NIFTY", years=30)
             return {'stock_info': info, 'price_history': prices, 'financials': financials,
                     'nifty_history': nifty, 'shareholding': pd.DataFrame(), 'dividends': pd.DataFrame()}
     
@@ -318,35 +319,40 @@ def main():
     if 'show_suggestions' not in st.session_state:
         st.session_state.show_suggestions = False
     
-    # Load available stock list for autocomplete
+    # Load available stock list from data/prices directory (all stocks with data)
     stock_list = []
     try:
-        stock_list_file = Path("data/stock_lists/all_nse_stocks.json")
-        if stock_list_file.exists():
-            import json
-            with open(stock_list_file) as f:
-                stock_data = json.load(f)
-                if isinstance(stock_data, list):
-                    stock_list = sorted([s.get('symbol', s) if isinstance(s, dict) else s for s in stock_data[:500]])
-                elif isinstance(stock_data, dict):
-                    stock_list = sorted(list(stock_data.keys())[:500])
+        prices_dir = Path("data/prices")
+        if prices_dir.exists():
+            # Get all stock symbols from parquet files
+            stock_list = sorted([f.stem.upper() for f in prices_dir.glob("*.parquet")])
     except Exception:
         pass
     
-    # Popular stocks for quick autocomplete
-    popular_stocks = ["RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "HINDUNILVR", 
-                      "ITC", "SBIN", "BHARTIARTL", "KOTAKBANK", "BAJFINANCE", "AXISBANK",
-                      "MARUTI", "TITAN", "SUNPHARMA", "HCLTECH", "WIPRO", "TECHM"]
+    # Popular stocks for quick autocomplete (shown at top)
+    popular_stocks = [
+        "RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "HINDUNILVR", 
+        "ITC", "SBIN", "BHARTIARTL", "KOTAKBANK", "BAJFINANCE", "AXISBANK",
+        "MARUTI", "TITAN", "SUNPHARMA", "HCLTECH", "WIPRO", "TECHM",
+        "SBILIFE", "HDFCLIFE", "ICICIPRULI", "BAJAJFINSV", "MUTHOOTFIN",
+        "PERSISTENT", "COFORGE", "LTIM", "MPHASIS", "TATAELXSI",
+    ]
     
     # Stock input with autocomplete
     col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
     with col1:
         if stock_list:
-            # Autocomplete with selectbox
-            all_stocks = [""] + popular_stocks + [s for s in stock_list if s not in popular_stocks]
+            # Build list: popular first, then rest alphabetically
+            all_stocks = [""] + [s for s in popular_stocks if s in stock_list]
+            all_stocks += [s for s in stock_list if s not in popular_stocks]
+            
+            # Find default index
             default_idx = 0
-            if 'selected_stock' in st.session_state and st.session_state.selected_stock in all_stocks:
-                default_idx = all_stocks.index(st.session_state.selected_stock)
+            if 'selected_stock' in st.session_state and st.session_state.selected_stock:
+                selected = st.session_state.selected_stock.upper()
+                if selected in all_stocks:
+                    default_idx = all_stocks.index(selected)
+            
             symbol = st.selectbox(
                 "Select or type NSE Stock Symbol",
                 all_stocks,
@@ -354,6 +360,8 @@ def main():
                 format_func=lambda x: x if x else "Type to search...",
                 key="stock_selector"
             )
+            if symbol:
+                symbol = symbol.upper()
         else:
             symbol = st.text_input("Enter NSE Stock Symbol", placeholder="e.g., RELIANCE, TCS, INFY").upper().strip()
     with col2:
@@ -764,7 +772,7 @@ def main():
                             curr_price = 100
                         
                         val_metrics = {
-                            'pe_ratio': results['valuation'].pe_ratio or 20,
+                            'pe_ratio': results['valuation'].current_pe or 20,
                             'current_price': curr_price,
                         }
                         user_profile_dict = {

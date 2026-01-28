@@ -160,7 +160,7 @@ class TimeTravelEngine:
     def get_available_cutoffs(self, prices: pd.DataFrame) -> List[int]:
         """
         Generate available cutoff years based on the stock's actual data range.
-        Shows cutoffs from the stock's starting year, spaced appropriately.
+        Shows ALL years from the stock's starting year to present.
         """
         if prices.empty:
             return []
@@ -171,38 +171,16 @@ class TimeTravelEngine:
         max_year = df['date'].max().year
         current_year = datetime.now().year
         
-        # Need at least 2 years of post-cutoff data for meaningful analysis
-        latest_cutoff = min(max_year - 2, current_year - 1)
+        # Need at least 1 year of post-cutoff data for meaningful analysis
+        latest_cutoff = min(max_year - 1, current_year - 1)
         
-        # Generate cutoffs dynamically based on data range
-        cutoffs = []
+        # Need at least 1 year of pre-cutoff data
+        earliest_cutoff = min_year + 1
         
-        # Start from stock's first year (rounded to nearest significant year)
-        # Add the actual starting year if it has enough history
-        if min_year <= latest_cutoff:
-            # Add starting year + 1 (need some data before cutoff too)
-            first_cutoff = min_year + 1
-            if first_cutoff <= latest_cutoff:
-                cutoffs.append(first_cutoff)
+        if earliest_cutoff > latest_cutoff:
+            return []
         
-        # Add years from default list that fall within range
-        for year in self.DEFAULT_CUTOFFS:
-            if min_year < year <= latest_cutoff and year not in cutoffs:
-                cutoffs.append(year)
-        
-        # Ensure we have some spacing - add intermediate years if range is large
-        if min_year < 2005 and 2005 <= latest_cutoff and 2005 not in cutoffs:
-            cutoffs.append(2005)
-        if min_year < 2010 and 2010 <= latest_cutoff and 2010 not in cutoffs:
-            cutoffs.append(2010)
-        
-        # Sort and return
-        cutoffs = sorted(set(cutoffs))
-        
-        # Limit to reasonable number of options (max 10)
-        if len(cutoffs) > 10:
-            # Keep first, last, and evenly spaced in between
-            step = len(cutoffs) // 8
-            cutoffs = cutoffs[::step] if step > 1 else cutoffs[:10]
+        # Generate ALL years from stock's start to latest valid cutoff
+        cutoffs = list(range(earliest_cutoff, latest_cutoff + 1))
         
         return cutoffs
