@@ -7,6 +7,8 @@ Run with: streamlit run app.py
 
 import streamlit as st
 import pandas as pd
+import json
+from typing import Dict, Any
 from datetime import datetime
 from pathlib import Path
 import sys
@@ -16,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from src.utils.config import load_config, get_config
 from src.data.sources import DataSourceManager
+from src.data.macro import get_macro_provider
 from src.data.database import DatabaseManager
 from src.data.cache import CacheManager
 from src.engine.governance import GovernanceAnalyzer
@@ -48,6 +51,123 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+@st.cache_data(show_spinner=False)
+def _load_stock_info_index() -> pd.DataFrame:
+    """Load stock info JSONs into a DataFrame for suggestions."""
+    info_dir = Path("data/stock_info")
+    records = []
+    if not info_dir.exists():
+        return pd.DataFrame()
+    for f in info_dir.glob("*.json"):
+        try:
+            raw = json.loads(f.read_text())
+            records.append({
+                "symbol": f.stem.upper(),
+                "name": raw.get("longName", raw.get("shortName", f.stem)),
+                "sector": raw.get("sector"),
+                "industry": raw.get("industry"),
+                "market_cap": raw.get("marketCap"),
+                "current_price": raw.get("currentPrice", raw.get("regularMarketPrice")),
+                "pe_ratio": raw.get("trailingPE"),
+                "dividend_yield": (raw.get("dividendYield") or 0) * 100 if raw.get("dividendYield") is not None else None,
+                "roe": (raw.get("returnOnEquity") or 0) * 100 if raw.get("returnOnEquity") else None,
+                "debt_to_equity": raw.get("debtToEquity"),
+                "beta": raw.get("beta"),
+            })
+        except Exception:
+            continue
+    df = pd.DataFrame(records)
+    # Coerce numeric fields to floats for scoring
+    for col in [
+        "market_cap", "current_price", "pe_ratio", "dividend_yield",
+        "roe", "debt_to_equity", "beta"
+    ]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df
+
+
+def _filter_market_cap(df: pd.DataFrame, market_cap_filter: str) -> pd.DataFrame:
+    if df.empty or not market_cap_filter or market_cap_filter == "Any":
+        return df
+    # ₹20,000 Cr = 2e11; ₹5,000 Cr = 5e10
+    large_cap = 2e11
+    mid_cap = 5e10
+    if "Large Cap" in market_cap_filter:
+        return df[df["market_cap"] >= large_cap]
+    if "Mid Cap" in market_cap_filter:
+        return df[(df["market_cap"] >= mid_cap) & (df["market_cap"] < large_cap)]
+    if "Small Cap" in market_cap_filter:
+        return df[df["market_cap"] < mid_cap]
+    return df
+
+
+def _score_candidates(df: pd.DataFrame, profile: Dict[str, Any]) -> pd.DataFrame:
+    if df.empty:
+        return df
+    risk = profile.get("risk_appetite", "medium")
+    expected = profile.get("expected_return", 15)
+    tenure = profile.get("holding_tenure", 5)
+
+    def score_row(row: pd.Series) -> float:
+        score = 50.0
+        roe = row.get("roe") or 0
+        div = row.get("dividend_yield") or 0
+        de = row.get("debt_to_equity") or 0
+        pe = row.get("pe_ratio") or 0
+        mcap = row.get("market_cap") or 0
+        beta = row.get("beta") or 1
+
+        # Quality / returns
+        score += min(roe, 30) / 30 * 30
+        if expected >= 20 and roe < 12:
+            score -= 8
+        if expected <= 10 and roe >= 20:
+            score += 4
+
+        # Leverage penalty
+        score -= min(de, 3) / 3 * 15
+
+        # Dividends favor long-tenure/low risk
+        div_weight = 15 if risk == "low" else 8 if risk == "medium" else 4
+        if tenure >= 10:
+            div_weight += 3
+        score += min(div, 5) / 5 * div_weight
+
+        # PE preference
+        if pe:
+            if pe < 8:
+                score -= 3
+            elif pe <= 25:
+                score += 8
+            elif pe <= 50:
+                score += 2 if risk == "high" else -4
+            else:
+                score -= 8
+
+        # Market cap preference
+        if mcap:
+            if risk == "low":
+                score += 10 if mcap >= 2e11 else 4 if mcap >= 5e10 else -6
+            elif risk == "high":
+                score += 8 if 5e10 <= mcap < 2e11 else 4 if mcap >= 2e11 else 6
+            else:
+                score += 6 if mcap >= 5e10 else -2
+
+        # Beta preference
+        if beta:
+            if risk == "low":
+                score += 6 if beta <= 1 else -4 if beta > 1.5 else 0
+            elif risk == "high":
+                score += 3 if beta >= 1 else 0
+
+        return score
+
+    scored = df.copy()
+    scored["score"] = scored.apply(score_row, axis=1)
+    return scored.sort_values("score", ascending=False)
+
+
 class IndianEquityIntelligence:
     def __init__(self):
         self.config = load_config()
@@ -63,6 +183,7 @@ class IndianEquityIntelligence:
         self.red_flag = RedFlagDetector()
         self.time_travel = TimeTravelEngine()
         self.scenario_sim = ScenarioSimulator()
+        self.macro_provider = get_macro_provider()
         
         # Initialize ML Ensemble (3-layer architecture)
         self._ml_ensemble = None
@@ -108,6 +229,10 @@ class IndianEquityIntelligence:
             try:
                 success, messages = self.ml_ensemble.initialize(load_models=True)
                 self._ml_initialized = success
+                if success:
+                    artifacts = self.ml_ensemble.get_classifier_artifacts()
+                    if artifacts:
+                        self.explainer = ExplainabilityEngine(ml_model=artifacts)
                 return success, messages
             except Exception as e:
                 logger.error(f"ML initialization failed: {e}")
@@ -171,19 +296,31 @@ class IndianEquityIntelligence:
             ml_prediction = None
             if self._ml_enabled and self.ml_ensemble and self._ml_initialized:
                 try:
-                    with st.spinner("Running ML-enhanced analysis..."):
-                        ml_prediction = self.ml_ensemble.predict(
-                            symbol=symbol,
-                            prices=prices,
-                            governance_result=gov,
-                            financial_result=fin,
-                            valuation_result=val,
-                            market_result=mkt,
-                            company_name=info.get('name', symbol),
-                            current_signal=signal.signal,
-                            current_confidence=signal.confidence,
-                            red_flags=[r.description for r in red_flags],
-                        )
+                    macro_data = None
+                    if self.config.get('macro_config', {}).get('enabled', True):
+                        try:
+                            macro_data = self.macro_provider.get_all_macro_data(years=10)
+                        except Exception as e:
+                            logger.debug(f"Macro data fetch failed: {e}")
+
+                    # Respect investable universe filter before ML forecasting
+                    if hasattr(fin, 'investable') and not fin.investable:
+                        logger.info("Skipping ML prediction due to investable filter")
+                    else:
+                        with st.spinner("Running ML-enhanced analysis..."):
+                            ml_prediction = self.ml_ensemble.predict(
+                                symbol=symbol,
+                                prices=prices,
+                                governance_result=gov,
+                                financial_result=fin,
+                                valuation_result=val,
+                                market_result=mkt,
+                                macro_data=macro_data,
+                                company_name=info.get('name', symbol),
+                                current_signal=signal.signal,
+                                current_confidence=signal.confidence,
+                                red_flags=[r.description for r in red_flags],
+                            )
                         
                         # Blend ML score with rule-based score
                         if ml_prediction and ml_prediction.success:
@@ -211,7 +348,19 @@ class IndianEquityIntelligence:
             # Generate explanations
             explain = self.explainer.generate_explanation(
                 signal, profile, gov, fin, val, mkt, info,
-                [{'severity': r.severity, 'description': r.description} for r in red_flags]
+                [{'severity': r.severity, 'description': r.description} for r in red_flags],
+                ml_features=(
+                    ml_prediction.feature_set.to_dataframe()
+                    if ml_prediction and ml_prediction.feature_set
+                    else None
+                ),
+                prediction_class=(
+                    {"BUY": 0, "HOLD": 1, "AVOID": 2, "SELL": 3}.get(
+                        ml_prediction.ml_signal, None
+                    )
+                    if ml_prediction and ml_prediction.success
+                    else None
+                ),
             )
             
             return {
@@ -385,50 +534,51 @@ def main():
     # Stock suggestions panel - based on user profile
     if st.session_state.show_suggestions:
         risk_appetite = profile_dict.get('risk_appetite', 'medium')
-        
-        # Define suggestions based on risk profile
-        suggestions = {
-            'low': {
-                'title': '📊 Conservative Picks (Low Risk)',
-                'categories': {
-                    'Blue Chips': ['RELIANCE', 'TCS', 'HDFCBANK', 'INFY', 'HINDUNILVR'],
-                    'Dividend Stocks': ['ITC', 'POWERGRID', 'COALINDIA', 'ONGC', 'NTPC'],
-                    'Stable Banking': ['HDFCBANK', 'ICICIBANK', 'KOTAKBANK', 'SBIN', 'AXISBANK'],
+
+        stock_info_df = _load_stock_info_index()
+        if stock_info_df.empty:
+            st.warning("No local stock metadata found. Run `python 2-download_all_stocks.py` first.")
+        else:
+            # Apply user filters
+            min_price, max_price = profile_dict.get('price_range', (1, 100000))
+            filtered = stock_info_df.copy()
+            filtered = filtered[(filtered["current_price"].fillna(0) >= min_price) &
+                                (filtered["current_price"].fillna(0) <= max_price)]
+            filtered = _filter_market_cap(filtered, profile_dict.get('market_cap', 'Any'))
+
+            # Score against profile
+            ranked = _score_candidates(filtered, profile_dict)
+            if ranked.empty:
+                st.warning("No stocks match your current filters. Try widening price or market cap range.")
+            else:
+                title = {
+                    "low": "📊 Conservative Picks (Low Risk)",
+                    "medium": "⚖️ Balanced Picks (Medium Risk)",
+                    "high": "🚀 Growth Picks (High Risk)"
+                }.get(risk_appetite, "⚖️ Balanced Picks (Medium Risk)")
+                st.info(f"**{title}** (Based on your profile filters) - Click any stock to analyze")
+
+                # Build categories from ranked list
+                top_overall = ranked.head(5)["symbol"].tolist()
+                top_quality = ranked.sort_values("roe", ascending=False).head(5)["symbol"].tolist()
+                top_income = ranked.sort_values("dividend_yield", ascending=False).head(5)["symbol"].tolist()
+
+                categories = {
+                    "Top Matches": top_overall,
+                    "Quality (ROE)": top_quality,
+                    "Income (Dividend)": top_income,
                 }
-            },
-            'medium': {
-                'title': '⚖️ Balanced Picks (Medium Risk)',
-                'categories': {
-                    'Quality Growth': ['TCS', 'INFY', 'HCLTECH', 'WIPRO', 'TECHM'],
-                    'Banking & Finance': ['BAJFINANCE', 'HDFCLIFE', 'SBILIFE', 'ICICIPRULI', 'MUTHOOTFIN'],
-                    'Consumer': ['TITAN', 'DMART', 'TRENT', 'PAGEIND', 'BATAINDIA'],
-                }
-            },
-            'high': {
-                'title': '🚀 Growth Picks (High Risk)',
-                'categories': {
-                    'Mid-Cap IT': ['PERSISTENT', 'COFORGE', 'LTIM', 'MPHASIS', 'TATAELXSI'],
-                    'Small-Cap Growth': ['DEEPAKNTR', 'POLYCAB', 'AFFLE', 'HAPPSTMNDS', 'ROUTE'],
-                    'Emerging Sectors': ['IRCTC', 'CDSL', 'AAVAS', 'APTUS', 'DIXON'],
-                }
-            }
-        }
-        
-        profile_suggestions = suggestions.get(risk_appetite, suggestions['medium'])
-        
-        st.info(f"**{profile_suggestions['title']}** (Based on your {risk_appetite.title()} risk profile) - Click any stock to analyze")
-        
-        cols = st.columns(len(profile_suggestions['categories']))
-        for col, (category, stocks) in zip(cols, profile_suggestions['categories'].items()):
-            with col:
-                st.markdown(f"**{category}**")
-                for s in stocks:
-                    if st.button(s, key=f"sug_{s}", use_container_width=True):
-                        # Set the selected stock and trigger analysis
-                        st.session_state.selected_stock = s
-                        st.session_state.analyze_stock = s
-                        st.session_state.show_suggestions = False
-                        st.rerun()
+
+                cols = st.columns(len(categories))
+                for col, (category, stocks) in zip(cols, categories.items()):
+                    with col:
+                        st.markdown(f"**{category}**")
+                        for s in stocks:
+                            if st.button(s, key=f"sug_{category}_{s}", use_container_width=True):
+                                st.session_state.selected_stock = s
+                                st.session_state.analyze_stock = s
+                                st.session_state.show_suggestions = False
+                                st.rerun()
     
     # Handle stock selection from suggestions
     if 'analyze_stock' in st.session_state and st.session_state.analyze_stock:
@@ -483,6 +633,12 @@ def main():
                 st.subheader("⚠️ Key Concerns")
                 for n in signal.key_negatives[:5]:
                     st.warning(n)
+
+            if hasattr(results['financial'], 'investable') and not results['financial'].investable:
+                st.markdown("---")
+                st.subheader("🚫 Investable Universe Filter")
+                for reason in results['financial'].investable_reasons:
+                    st.error(reason)
             
             if results['red_flags']:
                 st.markdown("---")
@@ -559,6 +715,21 @@ def main():
                 if ml_prediction.summary:
                     st.subheader("📝 AI Analysis Summary")
                     st.markdown(ml_prediction.summary)
+
+                # SHAP / Model Explainability
+                if results.get('explain') and results['explain'].ml_explanation:
+                    st.markdown("---")
+                    st.subheader("🧠 Model Explanation (SHAP)")
+                    st.markdown(results['explain'].ml_explanation)
+                    shap = results['explain'].shap_contributions or {}
+                    top_positive = shap.get('top_positive', [])
+                    top_negative = shap.get('top_negative', [])
+                    if top_positive or top_negative:
+                        st.caption("Top contributing features")
+                        for feature, value in top_positive[:5]:
+                            st.success(f"+ {feature}: {value:+.3f}")
+                        for feature, value in top_negative[:5]:
+                            st.warning(f"- {feature}: {value:+.3f}")
                 
                 # Key Insights
                 if ml_prediction.key_insights:

@@ -31,6 +31,8 @@ thresholds:
     min_revenue_cagr_5y: 8.0
     min_roce: 12.0
     min_fcf_yield: 2.0
+    min_positive_fcf_years: 5
+    min_earnings_quality: 0.6
     max_debt_to_equity: 1.5
   valuation:
     pe_percentile_expensive: 80
@@ -123,7 +125,6 @@ ml_config:
   model_type: xgboost
   n_clusters: 8
   min_samples_for_training: 100
-
 macro_config:
   enabled: true
   cache_dir: data/macro
@@ -141,12 +142,10 @@ macro_config:
     sideways:
       oversold: 30
       overbought: 70
-
 survivorship_bias:
   enabled: true
   include_delisted: true
   delisted_data_dir: data/delisted
-
 inflation_adjustment:
   enabled: true
   use_log_returns: true

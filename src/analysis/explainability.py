@@ -43,6 +43,8 @@ class SHAPExplainer:
         'return_20d': '20-day return',
         'return_60d': '60-day return',
         'return_252d': '1-year return',
+        'log_return_252d': '1-year log return',
+        'real_return_252d': '1-year inflation-adjusted return',
         'volatility_20d': '20-day volatility',
         'volatility_60d': '60-day volatility',
         'momentum_10d': '10-day momentum',

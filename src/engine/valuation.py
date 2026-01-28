@@ -90,20 +90,22 @@ class ValuationAnalyzer:
         """Analyze PE ratio with historical percentile calculation."""
         if current_pe is None:
             return {'current': None, 'percentile_own': None, 'score': 50}
-        
-        # Estimate percentile based on absolute PE
-        if current_pe < 12:
-            percentile = 20
-        elif current_pe < 18:
-            percentile = 35
-        elif current_pe < 25:
-            percentile = 50
-        elif current_pe < 35:
-            percentile = 70
-        elif current_pe < 50:
-            percentile = 85
-        else:
-            percentile = 95
+
+        percentile = self._estimate_historical_pe_percentile(current_pe, price_history, financials)
+        if percentile is None:
+            # Fallback: estimate percentile based on absolute PE
+            if current_pe < 12:
+                percentile = 20
+            elif current_pe < 18:
+                percentile = 35
+            elif current_pe < 25:
+                percentile = 50
+            elif current_pe < 35:
+                percentile = 70
+            elif current_pe < 50:
+                percentile = 85
+            else:
+                percentile = 95
         
         score = 90 if percentile <= 20 else 75 if percentile <= 40 else 60 if percentile <= 60 else 45 if percentile <= 80 else 25
         
@@ -113,6 +115,58 @@ class ValuationAnalyzer:
             score = min(100, score + 10)
         
         return {'current': round(current_pe, 2), 'percentile_own': round(percentile, 1), 'score': score}
+
+    def _estimate_historical_pe_percentile(
+        self,
+        current_pe: float,
+        price_history: pd.DataFrame,
+        financials: Dict
+    ) -> Optional[float]:
+        """Estimate historical PE percentile using EPS and price history."""
+        try:
+            income_stmt = financials.get('income_statement', pd.DataFrame())
+            if income_stmt.empty or price_history.empty:
+                return None
+
+            eps_cols = ['Diluted EPS', 'Basic EPS', 'Earnings Per Share', 'EPS']
+            eps = None
+            for col in eps_cols:
+                if col in income_stmt.columns:
+                    eps = income_stmt[col].dropna()
+                    break
+
+            if eps is None or eps.empty:
+                return None
+
+            price_df = price_history.copy()
+            if 'date' not in price_df.columns or 'close' not in price_df.columns:
+                return None
+            price_df['date'] = pd.to_datetime(price_df['date'])
+            price_df = price_df.sort_values('date').set_index('date')
+
+            pe_series = []
+            for eps_date, eps_value in eps.items():
+                if eps_value is None or eps_value <= 0:
+                    continue
+                eps_date = pd.to_datetime(eps_date)
+                price_slice = price_df[price_df.index <= eps_date]
+                if price_slice.empty:
+                    continue
+                price_at_date = float(price_slice['close'].iloc[-1])
+                pe_value = price_at_date / eps_value if eps_value != 0 else None
+                if pe_value and np.isfinite(pe_value):
+                    pe_series.append(pe_value)
+
+            if len(pe_series) < 3:
+                return None
+
+            pe_array = np.array(pe_series)
+            percentile = float(np.mean(pe_array <= current_pe) * 100)
+            return percentile
+
+        except Exception as e:
+            logger.debug(f"PE percentile estimation error: {e}")
+            return None
     
     def _analyze_pb(self, current_pb: Optional[float]) -> Dict:
         """Analyze Price-to-Book ratio."""

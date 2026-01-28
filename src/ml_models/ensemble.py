@@ -74,6 +74,9 @@ class MLPrediction:
     # Explanation
     summary: str = ""
     key_insights: List[str] = field(default_factory=list)
+
+    # Feature set (for explainability)
+    feature_set: Optional[FeatureSet] = None
     
     # Performance metrics
     total_inference_time_ms: float = 0.0
@@ -194,6 +197,15 @@ class MLEnsemble:
             },
             "device": self.config.device,
         }
+
+    def get_classifier_artifacts(self) -> Dict[str, Any]:
+        """Expose classifier model and feature names for explainability."""
+        if not self._classifier or not self._classifier.is_ready:
+            return {}
+        return {
+            "model": getattr(self._classifier, "_model", None),
+            "feature_names": getattr(self._classifier, "_feature_names", []),
+        }
     
     def initialize(self, load_models: bool = True) -> Tuple[bool, List[str]]:
         """
@@ -285,6 +297,7 @@ class MLEnsemble:
         financial_result: Optional[Any] = None,
         valuation_result: Optional[Any] = None,
         market_result: Optional[Any] = None,
+        macro_data: Optional[Dict[str, Any]] = None,
         company_name: str = "",
         current_signal: str = "HOLD",
         current_confidence: float = 0.5,
@@ -367,7 +380,9 @@ class MLEnsemble:
             valuation_result=valuation_result,
             market_result=market_result,
             forecast_result=forecast_result,
+            macro_data=macro_data,
         )
+        prediction.feature_set = feature_set
         
         # Step 3: Run classifier
         if self._classifier and self._classifier.is_ready:

@@ -1,275 +1,58 @@
 # Indian Equity Intelligence
 
-A **free**, **open-source**, **local-first** application for analyzing Indian equities with ML-powered insights.
+A local-first, ML-powered stock analysis tool for Indian equities. It combines governance, fundamentals, valuation, market behavior, and macro context into a single, explainable signal.
 
-> *"Is this stock suitable for this investor, under these assumptions — and what could invalidate the thesis?"*
+## What It Does
+- Personalized stock signals (BUY/HOLD/AVOID/SELL) based on your risk profile
+- Mandatory “Why NOT to Buy” risks for every stock
+- Regime-aware RSI thresholds (Bull/Bear/Sideways)
+- Macro factors (repo rate, USD-INR, crude oil, CPI)
+- ML classifier trained with walk‑forward validation and risk‑adjusted targets
+- SHAP‑based explanations when ML is enabled
+- Time‑travel and scenario analysis (optional)
 
-## Quick Start (5 Steps)
-
-### 1. Clone the Repository
+## Installation (Exact Order)
 
 ```bash
+# 1. Clone the repo
 git clone https://github.com/your-repo/indian-equity-intelligence.git
 cd indian-equity-intelligence
-```
 
-### 2. Setup
+# 2. Install dependencies
+pip install -r requirements.txt
 
-```bash
+# 3. Setup environment
 python 1-setup.py
-```
-This installs dependencies and sets up the environment.
 
-### 3. Download Data
-
-```bash
+# 4. Download stock data (~2,200 NSE stocks)
 python 2-download_all_stocks.py
-```
-This downloads historical data for ~2,200 stocks.
 
-### 4. Download ML Models
+# 5. Download delisted stocks (optional but recommended)
+python scripts/download_delisted_stocks.py --export
 
-Run the interactive model downloader to choose models based on your PC specs:
+# 6. (Optional) Enable real crude oil data
+# Set your FRED API key to avoid synthetic data warnings
+export FRED_API_KEY="your_fred_api_key"
 
-```bash
+# 7. Download ML models (optional; required for ML forecaster/explainer)
 python 3-download_models.py
-```
 
-**Choose a preset based on your hardware:**
-
-| Preset | RAM Required | What You Get |
-|--------|--------------|--------------|
-| 🚀 **Full** | 16GB+ | Chronos-T5-Base + LightGBM + Qwen2.5-3B |
-| 💻 **Standard** | 8-16GB | Chronos-T5-Small + LightGBM + Qwen2.5-3B |
-| 🪶 **Lite** | 4-8GB | Chronos-T5-Tiny + LightGBM (no LLM) |
-
-### 5. Train the Classifier
-
-Train the LightGBM classifier using the pre-downloaded stock data:
-
-```bash
+# 8. Train the classifier (required for ML signals)
 python 4-train_classifier.py
-```
 
-This uses the **2,200+ stocks** in the `data/` directory — no internet needed!
-
-```
-📊 Found 2248 stocks with local data
-📈 Training on 500 stocks...
-✓ Successfully processed 487/500 stocks
-🔧 Training LightGBM classifier...
-✓ Training complete!
-   Accuracy: 72.45%
-   F1 Score: 68.23%
-💾 Model saved to: models/classifier/lightgbm/model.pkl
-```
-
-### 6. Run the Application
-
-```bash
+# 9. Run the app
 streamlit run app.py
 ```
 
-Open http://localhost:8501 — **ML models initialize automatically!**
+Open http://localhost:8501
 
----
-
-## What This Tool Does
-
-### ML-Enhanced Stock Analysis
-
-| Layer | Model | What It Does |
-|-------|-------|--------------|
-| **Forecaster** | Chronos-T5 | Predicts price trends for next 30 days |
-| **Classifier** | LightGBM | Generates BUY/HOLD/AVOID/SELL signals |
-| **Explainer** | Qwen2.5-3B | Writes natural language analysis |
-
-All models run **100% locally** on your machine. No cloud APIs, no data sent anywhere.
-
-### Analysis Dimensions
-
-- **Governance**: Promoter holding, pledge ratio, auditor stability
-- **Financial**: Revenue growth, ROCE, cash flows, margins
-- **Valuation**: PE/PB vs history, PEG ratio
-- **Market Behaviour**: Drawdowns, volatility, recovery patterns
-- **ML Insights**: Price forecasts, AI-generated explanations
-
-### Signals
-
-Based on YOUR investment profile:
-- **BUY**: Strong match with your criteria
-- **HOLD**: Mixed signals, monitor
-- **AVOID**: Doesn't fit your profile
-- **SELL**: Significant concerns detected
-
----
-
-## Hardware Requirements
-
-| Setup | RAM | GPU | Models |
-|-------|-----|-----|--------|
-| **Minimum** | 8GB | None | Chronos-Tiny + LightGBM |
-| **Recommended** | 16GB | Optional | Chronos-Base + LightGBM + Qwen2.5-3B |
-| **Ideal** | 16GB+ | 8GB VRAM | All models with GPU acceleration |
-
----
-
-## Alternative Setup Methods
-
-### Docker
-
-```bash
-docker-compose up --build
-```
-
-### Manual Model Download
-
-If the automatic downloader doesn't work:
-
-```bash
-# Create directories
-mkdir -p models/{forecaster,classifier,explainer}
-
-# Forecaster (choose one)
-huggingface-cli download amazon/chronos-t5-base --local-dir models/forecaster/chronos-t5-base
-
-# Explainer (optional)
-mkdir -p models/explainer/qwen2.5-3b
-wget https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf \
-  -O models/explainer/qwen2.5-3b/model.gguf
-```
-
-See [ML_MODELS.md](ML_MODELS.md) for detailed instructions.
-
----
-
-## Configuration
-
-Edit `config/settings.yaml` to customize:
-
-```yaml
-ml_config:
-  enabled: true
-  auto_initialize: true  # Models load on startup
-  
-  forecaster:
-    model: "chronos-t5-base"  # or chronos-t5-small, chronos-t5-tiny
-  
-  classifier:
-    model: "lightgbm"  # or catboost
-  
-  explainer:
-    model: "qwen2.5-3b"  # or qwen2.5-7b, null to disable
-```
-
----
-
-## Features
-
-### Core Features
-- **Individual Stock Analysis**: Analyze any NSE-listed company
-- **User Profile Matching**: Signals personalized to YOUR goals
-- **Mandatory "Why NOT" Panel**: Shown even for BUY signals
-- **Red Flag Detection**: Automatic governance/financial warnings
-
-### ML Features
-- **Price Predictions**: 5-day and 30-day trend forecasts
-- **Signal Probabilities**: Confidence levels for each signal
-- **AI Explanations**: Natural language analysis summaries
-- **Trend Detection**: Bullish/Bearish/Neutral classification
-
-### Advanced Features
-- **Time Travel Mode**: Re-analyze with historical data only
-- **Scenario Simulator**: Stress-test your investment thesis
-- **Stock Suggestions**: Quick picks by category
-
----
-
-## Project Structure
-
-```
-indian-equity-intelligence/
-├── app.py                    # Main application
-├── download_models.py        # Interactive model downloader
-├── requirements.txt          # Python dependencies
-├── config/settings.yaml      # Configuration
-├── models/                   # ML models (download via script)
-│   ├── forecaster/
-│   ├── classifier/
-│   └── explainer/
-├── data/                     # Stock data (auto-downloaded)
-└── src/                      # Source code
-```
-
----
-
-## Troubleshooting
-
-### "Models not loading"
-```bash
-# Re-run the model downloader
-python download_models.py
-```
-
-### "Classifier not ready" warning
-```bash
-# Train the classifier using local data
-python train_classifier.py
-```
-
-### LightGBM fails on Mac (libomp error)
-```bash
-# Install OpenMP library first
-brew install libomp
-
-# Then reinstall LightGBM
-pip install --force-reinstall lightgbm
-```
-
-If that doesn't work, the training script will automatically use sklearn's GradientBoosting as a fallback.
-
-### "llama-cpp-python build fails"
-```bash
-# Install with pre-built wheel
-pip install llama-cpp-python --prefer-binary
-
-# Or for Apple Silicon
-CMAKE_ARGS="-DLLAMA_METAL=on" pip install llama-cpp-python
-```
-
-### "Out of memory"
-Choose a lighter preset in `download_models.py` or disable the LLM explainer in settings.yaml:
-```yaml
-explainer:
-  model: null  # Uses rule-based explanations instead
-```
-
----
-
-## Privacy & Security
-
-- **100% Local Processing**: No data leaves your machine
-- **No Telemetry**: No tracking or analytics
-- **Offline Capable**: Works without internet after setup
-- **Open Source**: Full code transparency
-
----
+## Notes
+- Steps 5–8 are optional if you only want rule‑based analysis.
+- If you skip step 7, you can still run the app without ML.
+- If you skip step 5, survivorship bias handling is limited to active stocks only.
 
 ## Disclaimer
-
-**This tool is for educational purposes only.**
-
-- Not investment advice
-- Past performance ≠ future results
-- Always do your own research
-- Consult a qualified financial advisor
-
----
+This tool is for educational and research purposes only. It is not investment advice. Past performance does not guarantee future results. Always do your own research and consult a qualified financial advisor before investing.
 
 ## License
-
-MIT License - see LICENSE file.
-
----
-
-Built with ❤️ for the Indian retail investor community.
+MIT License — see [LICENSE](LICENSE).

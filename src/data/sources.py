@@ -16,6 +16,8 @@ import logging
 import time
 import json
 
+from ..utils.config import get_config
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -33,6 +35,31 @@ class LocalDataSource:
     def __init__(self):
         self._db_conn = None
         self._stock_info_cache = {}
+        survivorship = get_config('survivorship_bias', {}) or {}
+        self._include_delisted = survivorship.get('include_delisted', False)
+        delisted_dir = survivorship.get('delisted_data_dir', 'data/delisted')
+        self._delisted_dir = (PROJECT_ROOT / delisted_dir).resolve()
+
+    def _get_delisted_price_file(self, symbol: str) -> Optional[Path]:
+        if not self._include_delisted or not self._delisted_dir.exists():
+            return None
+        for subdir in ['prices', 'price_history', '']:
+            base = self._delisted_dir / subdir if subdir else self._delisted_dir
+            for ext in ['.parquet', '.csv']:
+                candidate = base / f"{symbol}{ext}"
+                if candidate.exists():
+                    return candidate
+        return None
+
+    def _get_delisted_info_file(self, symbol: str) -> Optional[Path]:
+        if not self._include_delisted or not self._delisted_dir.exists():
+            return None
+        for subdir in ['info', 'stock_info', '']:
+            base = self._delisted_dir / subdir if subdir else self._delisted_dir
+            candidate = base / f"{symbol}.json"
+            if candidate.exists():
+                return candidate
+        return None
     
     def _get_db(self):
         """Get database connection."""
@@ -80,6 +107,34 @@ class LocalDataSource:
                     return result
             except Exception as e:
                 logger.debug(f"Error reading info file for {symbol}: {e}")
+
+        # Try delisted info
+        delisted_info_file = self._get_delisted_info_file(symbol)
+        if delisted_info_file:
+            try:
+                with open(delisted_info_file) as f:
+                    info = json.load(f)
+                    result = {
+                        'symbol': symbol,
+                        'name': info.get('name', symbol),
+                        'sector': info.get('sector', 'Unknown'),
+                        'industry': info.get('industry', 'Unknown'),
+                        'market_cap': info.get('market_cap', 0),
+                        'current_price': info.get('last_known_price', 0),
+                        'pe_ratio': info.get('pe_ratio'),
+                        'pb_ratio': info.get('pb_ratio'),
+                        'dividend_yield': info.get('dividend_yield'),
+                        'roe': info.get('roe'),
+                        'debt_to_equity': info.get('debt_to_equity'),
+                        'fifty_two_week_high': info.get('peak_price'),
+                        'fifty_two_week_low': info.get('low_price'),
+                        'delisted': True,
+                        'source': 'delisted_file'
+                    }
+                    self._stock_info_cache[symbol] = result
+                    return result
+            except Exception as e:
+                logger.debug(f"Error reading delisted info file for {symbol}: {e}")
         
         # Try database
         db = self._get_db()
@@ -147,6 +202,26 @@ class LocalDataSource:
                     return df
             except Exception as e:
                 logger.debug(f"Error querying price history for {symbol}: {e}")
+
+        # Try delisted price history
+        delisted_price_file = self._get_delisted_price_file(symbol)
+        if delisted_price_file:
+            try:
+                if delisted_price_file.suffix == '.parquet':
+                    df = pd.read_parquet(delisted_price_file)
+                else:
+                    df = pd.read_csv(delisted_price_file)
+                if 'date' in df.columns:
+                    df['date'] = pd.to_datetime(df['date'])
+                else:
+                    df['date'] = pd.to_datetime(df.iloc[:, 0])
+                cutoff = datetime.now() - timedelta(days=years * 365)
+                df = df[df['date'] >= cutoff]
+                if not df.empty:
+                    logger.info(f"Got {len(df)} delisted records for {symbol}")
+                    return df.sort_values('date')
+            except Exception as e:
+                logger.debug(f"Error reading delisted price history for {symbol}: {e}")
         
         return None
     
@@ -172,6 +247,14 @@ class LocalDataSource:
                 symbols.update(r[0] for r in rows)
             except:
                 pass
+
+        # From delisted data
+        if self._include_delisted and self._delisted_dir.exists():
+            for ext in ['*.parquet', '*.csv']:
+                for f in self._delisted_dir.rglob(ext):
+                    symbols.add(f.stem)
+            for f in self._delisted_dir.rglob("*.json"):
+                symbols.add(f.stem)
         
         return sorted(list(symbols))
     
