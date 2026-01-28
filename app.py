@@ -404,61 +404,62 @@ def main():
                               risk_appetite=profile_dict['risk_appetite'],
                               holding_tenure=profile_dict['holding_tenure'])
         st.markdown("---")
-        st.subheader("Data Status")
-        try:
-            available = app.data_manager.get_available_sources()
-            for s in available:
-                st.success(f"✓ {s.replace('_', ' ').title()}")
-        except Exception:
-            st.info("Data sources load on first search")
-        
-        # ML Models Status
-        st.markdown("---")
-        st.subheader("ML Models")
-        ml_status = app.get_ml_status()
-        
-        if ml_status.get('enabled'):
-            if not ml_status.get('initialized'):
-                if st.button("🚀 Initialize ML Models", use_container_width=True):
-                    with st.spinner("Loading ML models..."):
-                        success, messages = app.initialize_ml()
-                        for msg in messages:
-                            st.info(msg)
-                        if success:
-                            st.success("ML models ready! Re-run analysis to see ML insights.")
-                            # Clear previous results to force re-analysis
-                            if 'results' in st.session_state:
-                                del st.session_state.results
-                        st.rerun()
-            else:
-                # Show status of each layer
-                for layer in ['forecaster', 'classifier', 'explainer']:
-                    layer_info = ml_status.get(layer, {})
-                    model_name = layer_info.get('model') or 'Not configured'
-                    is_ready = layer_info.get('ready', False)
+        with st.expander("Under the Hood", expanded=False):
+            st.subheader("Data Status")
+            try:
+                available = app.data_manager.get_available_sources()
+                for s in available:
+                    st.success(f"✓ {s.replace('_', ' ').title()}")
+            except Exception:
+                st.info("Data sources load on first search")
+            
+            # ML Models Status
+            st.markdown("---")
+            st.subheader("ML Models")
+            ml_status = app.get_ml_status()
+            
+            if ml_status.get('enabled'):
+                if not ml_status.get('initialized'):
+                    if st.button("🚀 Initialize ML Models", use_container_width=True):
+                        with st.spinner("Loading ML models..."):
+                            success, messages = app.initialize_ml()
+                            for msg in messages:
+                                st.info(msg)
+                            if success:
+                                st.success("ML models ready! Re-run analysis to see ML insights.")
+                                # Clear previous results to force re-analysis
+                                if 'results' in st.session_state:
+                                    del st.session_state.results
+                            st.rerun()
+                else:
+                    # Show status of each layer
+                    for layer in ['forecaster', 'classifier', 'explainer']:
+                        layer_info = ml_status.get(layer, {})
+                        model_name = layer_info.get('model') or 'Not configured'
+                        is_ready = layer_info.get('ready', False)
+                        
+                        if is_ready:
+                            st.success(f"✓ {layer.title()}: {model_name}")
+                        elif model_name != 'Not configured':
+                            st.warning(f"⚠ {layer.title()}: {model_name}")
+                        else:
+                            st.info(f"○ {layer.title()}: Disabled")
                     
-                    if is_ready:
-                        st.success(f"✓ {layer.title()}: {model_name}")
-                    elif model_name != 'Not configured':
-                        st.warning(f"⚠ {layer.title()}: {model_name}")
-                    else:
-                        st.info(f"○ {layer.title()}: Disabled")
-                
-                # Show re-analyze button if results exist but ML wasn't used
-                if hasattr(st.session_state, 'results') and st.session_state.results:
-                    ml_pred = st.session_state.results.get('ml_prediction')
-                    if not ml_pred or not ml_pred.success:
-                        if st.button("🔄 Re-analyze with ML", use_container_width=True):
-                            symbol = st.session_state.get('symbol')
-                            current_profile = st.session_state.get('profile', profile)
-                            if symbol:
-                                data = app.fetch_data(symbol)
-                                if data:
-                                    st.session_state.data = data
-                                    st.session_state.results = app.run_analysis(symbol, current_profile, data)
-                                    st.rerun()
-        else:
-            st.info("ML disabled in config")
+                    # Show re-analyze button if results exist but ML wasn't used
+                    if hasattr(st.session_state, 'results') and st.session_state.results:
+                        ml_pred = st.session_state.results.get('ml_prediction')
+                        if not ml_pred or not ml_pred.success:
+                            if st.button("🔄 Re-analyze with ML", use_container_width=True):
+                                symbol = st.session_state.get('symbol')
+                                current_profile = st.session_state.get('profile', profile)
+                                if symbol:
+                                    data = app.fetch_data(symbol)
+                                    if data:
+                                        st.session_state.data = data
+                                        st.session_state.results = app.run_analysis(symbol, current_profile, data)
+                                        st.rerun()
+            else:
+                st.info("ML disabled in config")
         
         render_footer()
     
