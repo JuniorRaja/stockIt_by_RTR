@@ -122,7 +122,7 @@ python 4-train_classifier.py
 docker-compose up --build    
 
 Open👉 http://localhost:8501
-
+```
 ---
 
 ## ML Logic & Explainability 🧩
@@ -133,9 +133,10 @@ SHAP Integration: We use SHAP (SHapley Additive exPlanations) to break down ever
 Example Output: "The model is Bullish because 'ROE > 15%' (+20 impact) and 'Oil Prices Dropped' (+10 impact), despite 'RSI being Overbought' (-5 impact)."
 
 ## Disclaimer 📜
-This tool is for educational and research purposes only. It is built for the RTR Unfiltered community to analyze market logic. It is NOT financial advice. Markets are subject to risk. Use your own brain.
+This tool is for **educational and research purposes only**. It is built for the RTR Unfiltered community to analyze market logic. It is NOT financial advice. Markets are subject to risk. *Use your own brain before making financial decisions*.
 
 ## License
 MIT License — see [LICENSE](LICENSE).
 
-Built with 🧠 by RTR.
+
+_**Built with 🧠 by RTR.**_
