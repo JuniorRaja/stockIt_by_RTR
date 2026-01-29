@@ -91,49 +91,39 @@ The system is containerized for stability and reproducibility.
 ### Prerequisites
 Docker Desktop installed and running.
 
-Step 1: Clone the Repository
-Bash
-
-git clone [https://github.com/RTR95/stockIt_by_RTR.git](https://github.com/RTR95/stockIt_by_RTR.git)
+```bash
+# 1) Clone
+git clone https://github.com/RTR95/stockIt_by_RTR.git
 cd stockIt_by_RTR
-Step 2: Build and Launch
-Run the entire stack with a single command:
 
-Bash
+# 2) Install dependencies
+pip install -r requirements.txt
 
-docker-compose up --build -d
-Wait for the container to build. This may take a few minutes as it installs PyTorch and machine learning libraries.
+# 3) Setup environment
+python 1-setup.py
 
-Step 3: Hydrate the Data Lake (First Time Only)
-Once the container is running, you need to download the 30-year historical data (Active + Delisted) and AI models. Execute these commands inside the running container:
+# 4) Hydrate the Data Lake - First Time Only (~2,200 NSE stocks)
+python 2-download_all_stocks.py
 
-1. Initialize System & Download Active Stocks:
+# 5) Delisted stocks (recommended for survivorship bias)
+python scripts/download_delisted_stocks.py --export
+python scripts/download_delisted_stocks.py --download --years 30
 
-Bash
+# 6) (Optional) Enable real crude oil data
+export FRED_API_KEY="your_fred_api_key"
 
-docker-compose exec app python 1-setup.py
-docker-compose exec app python 2-download_all_stocks.py
-2. Download Delisted Stocks (Crucial for Survivorship Bias):
+# 7) Download ML models (optional; required for ML forecaster/explainer)
+python 3-download_models.py
 
-Bash
+# 8) Train classifier (required for ML signals)
+python 4-train_classifier.py
 
-docker-compose exec app python scripts/download_delisted_stocks.py
-(This fetches data for companies that no longer exist, preventing skewed historical analysis).
+# 9) Run the App through Container
+docker-compose up --build    
 
-3. Download Pre-trained AI Models:
+Open👉 http://localhost:8501
 
-Bash
-
-docker-compose exec app python 3-download_models.py
-4. Train the Brain (The Classifier):
-
-Bash
-
-docker-compose exec app python 4-train_classifier.py
-Step 4: Access the Dashboard
-Once the data is ready, open your browser and navigate to:
-
-👉 http://localhost:8501
+---
 
 ## ML Logic & Explainability 🧩
 We believe in "Unfiltered" truth. The AI shouldn't be a black box.
