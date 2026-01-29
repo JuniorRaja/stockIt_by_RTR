@@ -81,6 +81,7 @@ The system is containerized for stability and reproducibility.
     │ │ LightGBM       │ │
     │ └────────────────┘ │
     └────────────────────┘
+```
 
 ---
 
