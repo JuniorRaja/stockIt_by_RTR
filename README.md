@@ -1,124 +1,142 @@
-# Stocron by RTR
+# 🚀 StockIt by RTR | The Ultimate Market Intelligence Engine
 
-*The Indian Equity Intelligence*
+> **"30 Years of History. Zero Noise. Pure Alpha."**
 
-A **local‑first, explainable stock research engine** for Indian equities. It combines governance, fundamentals, valuation, market behavior, macro regimes, and ML into one signal—while always showing the downside first so decisions stay grounded.
+[![Docker](https://img.shields.io/badge/Docker-Enabled-blue?logo=docker&logoColor=white)](https://www.docker.com/)
+[![Streamlit](https://img.shields.io/badge/Frontend-Streamlit-red?style=for-the-badge&logo=streamlit)](https://streamlit.io/)
+[![Model](https://img.shields.io/badge/AI-Chronos--T5%20%2B%20LightGBM-orange?style=for-the-badge)](https://huggingface.co/amazon/chronos-t5-tiny)
+[![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 
-This is not a tip‑sheet. It’s a decision‑support system built for serious retail and advanced hobbyists who want transparent reasoning, not opaque recommendations.
+---
 
-## Architecture (High‑Level)
+## 📉 The Problem
+Retail investors are playing a rigged game. Most analysis tools suffer from three critical flaws:
+1.  **Recency Bias:** They only look at the last 5-10 years of a Bull market.
+2.  **Survivorship Bias:** They ignore delisted companies, making history look safer than it actually was.
+3.  **Linear Thinking:** They use simple indicators (RSI, MA) in a complex, non-linear macro environment.
 
-```
-        Investor Profile (Return, Risk, Tenure)
-                        │
-                        ▼
-    Data Layer (30y price + fundamentals + macro + delisted)
-                        │
-                        ▼
- ─────────────────────────────────────────────────┐
-|               Analysis Engines                  |
-|     Governance · Financial · Valuation · Market │
-│                                                 │
-└───────────────────────┬─────────────────────────┘
-                        ▼
-                ML Pipeline (Optional)
-    Chronos Forecaster → LightGBM Classifier → SHAP Explanations
-                        │
-                        ▼
-      Final Signal + Confidence + “Why NOT to Buy”
-```
+You cannot build generational wealth by just "looking at the chart." You need to understand the **Regime**, the **Fundamentals**, and the **Macro-Economic** backdrop.
 
-## Installation & Setup
+## 🛡️ Why This Tool Exists
+**StockIt** was built for the **RTR Unfiltered** ecosystem to answer one question:
+*"If I had the same data, tools, and computing power as a hedge fund, but with 30 years of unfiltered Indian market context, how would I trade?"*
 
-```bash
-# 1) Clone
-git clone https://github.com/RTR95/stockIt_by_RTR.git
+This is not just a screener. It is a **Time Machine**. It allows you to validate strategies across decades, factoring in inflation, oil prices, and corporate governance failures.
+
+---
+
+## ⚡ Super Powers (Features)
+
+### 🧠 1. The "Dual-Brain" AI Core
+We don't rely on a single model. StockIt uses a hybrid architecture:
+* **The Forecaster (Chronos-T5):** A Transformer-based model (pretrained by Amazon) that treats stock charts like a language to predict future price sequences.
+* **The Classifier (LightGBM):** A gradient-boosting decision engine that analyzes hundreds of features (Financials, Macro, Technicals) to generate a binary `BUY`/`HOLD` signal.
+
+### ⏳ 2. Time Travel & Survivorship
+Most backtests are fake because they test on companies that exist *today*.
+* **Delisted Database:** We track companies that failed, ensuring your strategy survives the worst.
+* **Time Travel Engine:** Go back to Jan 1st, 2008. The system "forgets" the future, forcing the AI to trade only on what it knew then.
+
+### 🌪️ 3. Scenario Simulator
+Don't just predict; prepare.
+* *What if Crude Oil hits $120?*
+* *What if the Repo Rate jumps to 8%?*
+The simulator stresses your portfolio against hypothetical macro-economic shocks.
+
+### 🕵️ 4. Governance Guard
+The tool doesn't just chase profits; it filters out fraud.
+* **Beneish M-Score:** Detects earnings manipulation.
+* **Altman Z-Score:** Predicts bankruptcy risk.
+* **Piotroski F-Score:** Measures fundamental strength.
+
+---
+
+## 🏗️ Architecture
+
+The system is containerized for stability and reproducibility.
+
+```mermaid
+graph TD
+    User((User)) -->|Browser| UI[Streamlit Container]
+    
+    subgraph "Docker Network"
+        UI -->|Request| Engine[Analysis Engine]
+        
+        Engine -->|Read| DB[(Data Lake / JSON)]
+        Engine -->|Inference| Models[ML Models]
+        
+        subgraph "Core Logic"
+            Models --> Chronos[Chronos-T5]
+            Models --> LGBM[LightGBM Classifier]
+            Engine --> Market[Market Engine]
+            Engine --> Macro[Macro Engine]
+            Engine --> Fin[Financial Engine]
+        end
+    end
+    
+    Internet((Internet)) -->|Yahoo Finance/NSE| DB
+
+🐳 Installation & Usage (Docker)
+We strongly recommend running StockIt via Docker to avoid dependency hell.
+
+Prerequisites
+Docker Desktop installed and running.
+
+Step 1: Clone the Repository
+Bash
+
+git clone [https://github.com/RTR95/stockIt_by_RTR.git](https://github.com/RTR95/stockIt_by_RTR.git)
 cd stockIt_by_RTR
+Step 2: Build and Launch
+Run the entire stack with a single command:
 
-# 2) Install dependencies
-pip install -r requirements.txt
+Bash
 
-# 3) Setup environment
-python 1-setup.py
+docker-compose up --build -d
+Wait for the container to build. This may take a few minutes as it installs PyTorch and machine learning libraries.
 
-# 4) Download stock data (~2,200 NSE stocks)
-python 2-download_all_stocks.py
+Step 3: Hydrate the Data Lake (First Time Only)
+Once the container is running, you need to download the 30-year historical data (Active + Delisted) and AI models. Execute these commands inside the running container:
 
-# 5) Delisted stocks (recommended for survivorship bias)
-python scripts/download_delisted_stocks.py --export
-python scripts/download_delisted_stocks.py --download --years 30
+1. Initialize System & Download Active Stocks:
 
-# 6) (Optional) Enable real crude oil data
-export FRED_API_KEY="your_fred_api_key"
+Bash
 
-# 7) Download ML models (optional; required for ML forecaster/explainer)
-python 3-download_models.py
+docker-compose exec app python 1-setup.py
+docker-compose exec app python 2-download_all_stocks.py
+2. Download Delisted Stocks (Crucial for Survivorship Bias):
 
-# 8) Train classifier (required for ML signals)
-python 4-train_classifier.py
+Bash
 
-# 9) Run the app
-streamlit run app.py
-```
+docker-compose exec app python scripts/download_delisted_stocks.py
+(This fetches data for companies that no longer exist, preventing skewed historical analysis).
 
-Open http://localhost:8501
+3. Download Pre-trained AI Models:
 
-## Features
+Bash
 
-### 1) Profile‑Aware Signals
-- Expected return, risk appetite, and holding period shape the BUY/HOLD/AVOID/SELL signal.
-- A **“Why NOT to Buy”** section is mandatory for every stock, including BUY—use it to calibrate conviction.
-- Benefit: keeps the recommendation aligned to *your* constraints rather than a generic “best stock”.
+docker-compose exec app python 3-download_models.py
+4. Train the Brain (The Classifier):
 
-### 2) Governance Engine
-- Promoter holding, pledge ratios, dividend consistency, auditor stability.
-- Highlights red flags (pledge spikes, auditor churn, governance signals).
-- Benefit: prevents “good numbers, bad stewardship” traps.
+Bash
 
-### 3) Financial Engine
-- Revenue/PAT CAGR, ROCE, cash‑flow quality, leverage.
-- **Investable universe filter** (e.g., sustained positive FCF) so weak cash‑flows are screened out early.
-- Benefit: removes structurally weak businesses before any ML or valuation excitement kicks in.
+docker-compose exec app python 4-train_classifier.py
+Step 4: Access the Dashboard
+Once the data is ready, open your browser and navigate to:
 
-### 4) Valuation Engine
-- PE/PB, EV/EBITDA, PEG with historical percentile context.
-- “Cheap” vs “expensive” is contextual, not absolute.
-- Benefit: avoids paying peak multiples even for good companies.
+👉 http://localhost:8501
 
-### 5) Market Behavior Engine
-- Drawdowns, recovery time, volatility regime, beta, Sharpe.
-- Relative performance vs Nifty (1Y/3Y/5Y).
-- Benefit: highlights resilience and downside behavior, not just upside returns.
+🧩 ML Logic & Explainability
+We believe in "Unfiltered" truth. The AI shouldn't be a black box.
 
-### 6) Regime‑Aware Technicals
-- RSI thresholds adapt to Bull/Bear/Sideways regimes.
-- Prevents “overbought/oversold” misreads in regime shifts.
-- Benefit: fewer false entries when the broader market structure changes.
+SHAP Integration: We use SHAP (SHapley Additive exPlanations) to break down every signal.
 
-### 7) Macro Context
-- Repo rate, USD‑INR, crude oil, CPI inflation as first‑class features.
-- Useful for 5–30 year cycles where macro dominates price action.
-- Benefit: reduces tunnel‑vision on charts alone.
+Example Output: "The model is Bullish because 'ROE > 15%' (+20 impact) and 'Oil Prices Dropped' (+10 impact), despite 'RSI being Overbought' (-5 impact)."
 
-### 8) ML Insights (Optional)
-- **Chronos forecaster** models 5–30 day trend direction.
-- **LightGBM classifier** uses walk‑forward validation to avoid look‑ahead bias.
-- **Risk‑adjusted targets** (Sharpe/Sortino) instead of raw price moves.
-- **SHAP explanations** show which features pushed the decision up or down.
-- Benefit: ML augments, not overrides—plus you get interpretable drivers.
-
-### 9) Time Travel Mode
-- Re‑run analysis as‑of a historical date using only data available then.
-- Benefit: validates whether the logic would have helped *in real time*, not just hindsight.
-
-### 10) Scenario Simulator
-- Stress‑tests a stock across multiple scenarios (rates up, recession, commodity shock, currency volatility).
-- **Good**: resilient/robust outcome with limited drawdown and fast recovery.
-- **Bad**: fragile outcome with large drawdown, slow recovery, or thesis breaks.
-- Benefit: helps you size positions and avoid asymmetric downside before entering.
-
-## Disclaimer
-This tool is for educational and research purposes only. It is not investment advice. Past performance does not guarantee future results. Always do your own research and consult a qualified financial advisor before investing.
+📜 Disclaimer
+This tool is for educational and research purposes only. It is built for the RTR Unfiltered community to analyze market logic. It is NOT financial advice. Markets are subject to risk. Use your own brain.
 
 ## License
 MIT License — see [LICENSE](LICENSE).
+
+Built with 🧠 by RTR.
