@@ -1,4 +1,4 @@
-# 🚀 Stocron by RTR | The Ultimate Market Intelligence Engine
+# Stocron by RTR | The Ultimate Market Intelligence Engine
 
 > **30 Years of History. Zero Noise. Pure Alpha.**
 
