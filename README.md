@@ -56,42 +56,33 @@ The tool doesn't just chase profits; it filters out fraud.
 
 The system is containerized for stability and reproducibility.
 
-```mermaid
-graph TD
-    User((User))
-    Internet((Internet))
-    
-    subgraph Docker_Container [Docker Container]
-        UI[Streamlit UI]
-        Engine[Analysis Engine]
-        Models[ML Models]
-        DB[(Data Lake / JSON)]
-        
-        subgraph Core_Logic [Core Logic Engines]
-            Market[Market Engine]
-            Macro[Macro Engine]
-            Fin[Financial Engine]
-            Chronos[Chronos-T5]
-            LGBM[LightGBM Classifier]
-        end
-    end
+```text
+       ┌──────────────┐
+       │     USER     │
+       └──────┬───────┘
+              │ (Browser)
+              ▼
+    ┌────────────────────┐
+    │    STREAMLIT UI    │
+    └─────────┬──────────┘
+              │ (Request)
+              ▼
+    ┌────────────────────┐          ┌──────────────────┐
+    │  ANALYSIS ENGINE   │◄─────────│   DATA LAKE DB   │
+    └─────────┬──────────┘          │  (JSON / CSV)    │
+              │                     └─────────▲────────┘
+              │ (Inference)                   │
+              │                               │ (Fetch)
+    ┌─────────▼──────────┐          ┌─────────┴────────┐
+    │     ML MODELS      │          │   INTERNET / NSE │
+    │ ┌────────────────┐ │          └──────────────────┘
+    │ │ Chronos-T5     │ │
+    │ ├────────────────┤ │
+    │ │ LightGBM       │ │
+    │ └────────────────┘ │
+    └────────────────────┘
 
-    %% Connections
-    User -->|Browser| UI
-    UI -->|Request| Engine
-    
-    Engine -->|Read| DB
-    Engine -->|Inference| Models
-    
-    Models --> Chronos
-    Models --> LGBM
-    
-    Engine --> Market
-    Engine --> Macro
-    Engine --> Fin
-
-    Internet -->|Yahoo Finance / NSE| DB
-    ```
+---
 
 ## Installation & Usage (Docker🐳)
 > We strongly recommend running Stocron via Docker to avoid dependency hell.
