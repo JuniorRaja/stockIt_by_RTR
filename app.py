@@ -9,7 +9,7 @@ import streamlit as st
 import pandas as pd
 import json
 from typing import Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 import sys
 import logging
@@ -17,6 +17,7 @@ import logging
 sys.path.insert(0, str(Path(__file__).parent))
 
 from src.utils.config import load_config, get_config
+from src.utils.helpers import calculate_cagr
 from src.data.sources import DataSourceManager
 from src.data.macro import get_macro_provider
 from src.data.database import DatabaseManager
@@ -26,7 +27,7 @@ from src.engine.financial import FinancialAnalyzer
 from src.engine.valuation import ValuationAnalyzer
 from src.engine.market import MarketBehaviourAnalyzer
 from src.engine.ml_context import MLContextAnalyzer
-from src.analysis.signal_generator import SignalGenerator, UserProfile
+from src.analysis.signal_generator import SignalGenerator, UserProfile, Signal
 from src.analysis.explainability import ExplainabilityEngine
 from src.analysis.red_flags import RedFlagDetector
 from src.features.time_travel import TimeTravelEngine
@@ -88,6 +89,47 @@ def _load_stock_info_index() -> pd.DataFrame:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
     return df
+
+
+def _calculate_price_cagr(prices: pd.DataFrame, years: int) -> float:
+    """Calculate price CAGR over the requested window (in years)."""
+    if prices is None or prices.empty or years <= 0:
+        return None
+    df = prices.copy()
+    if "date" in df.columns:
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.sort_values("date")
+        cutoff = datetime.now() - timedelta(days=years * 365)
+        df = df[df["date"] >= cutoff]
+        if df.empty:
+            return None
+        start_date = df["date"].iloc[0]
+        end_date = df["date"].iloc[-1]
+    else:
+        df = df.sort_index()
+        start_date = pd.to_datetime(df.index[0])
+        end_date = pd.to_datetime(df.index[-1])
+
+    price_series = None
+    if "close" in df.columns:
+        price_series = df["close"]
+    elif "Close" in df.columns:
+        price_series = df["Close"]
+    elif df.shape[1] >= 4:
+        price_series = df.iloc[:, 3]
+    elif df.shape[1] >= 1:
+        price_series = df.iloc[:, -1]
+
+    if price_series is None or price_series.empty:
+        return None
+
+    years_span = (end_date - start_date).days / 365.25
+    if years_span <= 0:
+        return None
+
+    start_price = float(price_series.iloc[0])
+    end_price = float(price_series.iloc[-1])
+    return calculate_cagr(start_price, end_price, years_span)
 
 
 def _filter_market_cap(df: pd.DataFrame, market_cap_filter: str) -> pd.DataFrame:
@@ -439,24 +481,30 @@ class IndianEquityIntelligence:
             **self.ml_ensemble.get_status()
         }
     
-    def fetch_data(self, symbol: str):
-        with st.spinner(f"Fetching data for {symbol}..."):
+    def fetch_data(self, symbol: str, show_spinner: bool = True, show_errors: bool = True):
+        def _fetch():
             info = self.data_manager.get_stock_info(symbol)
             if not info:
-                st.error(f"Could not find: {symbol}")
+                if show_errors:
+                    st.error(f"Could not find: {symbol}")
                 return None
             # Fetch up to 30 years of history (or all available)
             prices = self.data_manager.get_price_history(symbol, years=30)
             if prices is None or prices.empty:
-                st.error(f"No price history for {symbol}")
+                if show_errors:
+                    st.error(f"No price history for {symbol}")
                 return None
             financials = self.data_manager.get_financials(symbol) or {}
             nifty = self.data_manager.get_price_history("NIFTY", years=30)
             return {'stock_info': info, 'price_history': prices, 'financials': financials,
                     'nifty_history': nifty, 'shareholding': pd.DataFrame(), 'dividends': pd.DataFrame()}
+        if show_spinner:
+            with st.spinner(f"Fetching data for {symbol}..."):
+                return _fetch()
+        return _fetch()
     
-    def run_analysis(self, symbol: str, profile: UserProfile, data: dict, enable_ml: bool = True):
-        with st.spinner("Running analysis..."):
+    def run_analysis(self, symbol: str, profile: UserProfile, data: dict, show_spinner: bool = True, enable_ml: bool = True):
+        def _run():
             info = data['stock_info']
             prices = data['price_history']
             fins = data['financials']
@@ -558,6 +606,10 @@ class IndianEquityIntelligence:
                 'red_flags': red_flags,
                 'ml_prediction': ml_prediction,  # NEW: ML results
             }
+        if show_spinner:
+            with st.spinner("Running analysis..."):
+                return _run()
+        return _run()
 
 
 def main():
@@ -785,8 +837,30 @@ def main():
 
             # Score against profile
             ranked = _score_candidates(filtered, profile_dict)
+            if not ranked.empty:
+                expected_cagr = float(profile_dict.get('expected_return', 15))
+                holding_period = int(profile_dict.get('holding_tenure', 5))
+                cagr_tolerance = 2.0
+                max_candidates_for_signal = 200
+                candidate_symbols = ranked["symbol"].tolist()[:max_candidates_for_signal]
+                filtered_symbols = []
+                with st.spinner("Filtering candidates by CAGR and signal..."):
+                    for s in candidate_symbols:
+                        data = app.fetch_data(s, show_spinner=False, show_errors=False)
+                        if not data:
+                            continue
+                        stock_cagr = _calculate_price_cagr(data.get("price_history"), holding_period)
+                        if stock_cagr is None:
+                            continue
+                        if not (expected_cagr - cagr_tolerance <= stock_cagr <= expected_cagr + cagr_tolerance):
+                            continue
+                        results = app.run_analysis(s, profile, data, show_spinner=False, enable_ml=False)
+                        if results['signal'].signal not in {Signal.BUY, Signal.HOLD}:
+                            continue
+                        filtered_symbols.append(s)
+                ranked = ranked[ranked["symbol"].isin(filtered_symbols)]
             if ranked.empty:
-                st.warning("No stocks match your current filters. Try widening price or market cap range.")
+                st.warning("No stocks match your current filters after CAGR and signal checks. Try widening price, market cap, or expected CAGR.")
             else:
                 title = {
                     "low": "📊 Conservative Picks (Low Risk)",
