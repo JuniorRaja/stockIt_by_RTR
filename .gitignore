@@ -25,8 +25,9 @@ env/
 # Data files (generated locally)
 data/cache/
 data/db/
+data/macro/
 data/stock_info/
-data/stock_prices/
+data/prices/
 *.parquet
 *.db
 
