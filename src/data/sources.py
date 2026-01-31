@@ -94,6 +94,8 @@ class LocalDataSource:
                     result = {
                         'symbol': symbol,
                         'name': info.get('longName', info.get('shortName', symbol)),
+                        'business_summary': info.get('longBusinessSummary'),
+                        'city': info.get('city'),
                         'sector': info.get('sector', 'Unknown'),
                         'industry': info.get('industry', 'Unknown'),
                         'market_cap': info.get('marketCap', 0),
@@ -124,6 +126,8 @@ class LocalDataSource:
                     result = {
                         'symbol': symbol,
                         'name': info.get('name', symbol),
+                        'business_summary': info.get('business_summary'),
+                        'city': info.get('city'),
                         'sector': info.get('sector', 'Unknown'),
                         'industry': info.get('industry', 'Unknown'),
                         'market_cap': info.get('market_cap', 0),
@@ -154,6 +158,8 @@ class LocalDataSource:
                     result = {
                         'symbol': row[0],
                         'name': row[1] or symbol,
+                        'business_summary': None,
+                        'city': None,
                         'sector': row[2] or 'Unknown',
                         'industry': row[3] or 'Unknown',
                         'market_cap': row[4] or 0,
@@ -359,6 +365,8 @@ class YahooFinanceSource:
                     return {
                         'symbol': symbol,
                         'name': info.get('longName', info.get('shortName', symbol)),
+                        'business_summary': info.get('longBusinessSummary'),
+                        'city': info.get('city'),
                         'sector': info.get('sector', 'Unknown'),
                         'industry': info.get('industry', 'Unknown'),
                         'market_cap': info.get('marketCap', 0),

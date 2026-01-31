@@ -27,6 +27,7 @@ import csv
 from src.data.historic import (
     list_historic_stock_symbols,
     list_historic_index_names,
+    load_historic_stock_prices,
     load_historic_index_prices,
 )
 from src.data.refresh import refresh_symbol_data
@@ -719,6 +720,25 @@ def build_database():
                 """)
             except:
                 pass
+
+        # Load historic stock history (CSV datasets)
+        historic_stock_symbols = list_historic_stock_symbols()
+        logger.info(f"Loading {len(historic_stock_symbols)} historic stock files...")
+        for symbol in historic_stock_symbols:
+            try:
+                df = load_historic_stock_prices(symbol)
+                if df is None or df.empty:
+                    continue
+                conn.register("hist_stock_df", df)
+                conn.execute("""
+                    INSERT OR REPLACE INTO price_history
+                    SELECT symbol, date, open, high, low, close,
+                           CAST(volume AS BIGINT), source
+                    FROM hist_stock_df
+                """)
+                conn.unregister("hist_stock_df")
+            except Exception as e:
+                logger.debug(f"Historic stock load failed for {symbol}: {e}")
 
         # Load historic index history
         index_names = list_historic_index_names()

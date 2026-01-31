@@ -365,8 +365,8 @@ def print_summary(config):
     print(f"   Explainer:  {config.get('explainer') or 'Rule-based (no LLM)'}")
     
     print("\n🚀 Next steps:")
-    print("   1. Install requirements: pip install -r requirements.txt")
-    print("   2. Run the app:          streamlit run app.py")
+    print("   1. docker-compose exec stocron-by-rtr python 4-train_classifier.py")
+    print("   2. Run the app: Open👉 http://localhost:8501")
     print("   3. ML will auto-initialize when you start the app!")
     print()
 

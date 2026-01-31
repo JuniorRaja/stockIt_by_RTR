@@ -373,7 +373,7 @@ class MacroDataProvider:
             return pd.DataFrame()
         
         # Calculate monthly compounding
-        df = cpi_yoy.resample('M').mean()
+        df = cpi_yoy.resample('ME').mean()
         df['monthly_rate'] = df['cpi_yoy'] / 12 / 100
         
         # Cumulative index

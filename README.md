@@ -1,6 +1,6 @@
 # Stocron by RTR | The Ultimate Market Intelligence Engine
 
-> **30 Years of History. Zero Noise. Pure Alpha.**
+> **30+ Years of History. Zero Noise. Pure Alpha.**
 
 
 [![Docker](https://img.shields.io/badge/Docker-Enabled-blue?logo=docker&logoColor=white)](https://www.docker.com/)
@@ -96,10 +96,10 @@ Docker Desktop installed and running.
 git clone https://github.com/RTR95/stockIt_by_RTR.git
 cd stockIt_by_RTR
 
-# 2) Run the app via Docker
-docker-compose up --build
+# 2) Build + start the app container
+docker-compose up -d --build
 
-# 3) First-time DB build (required)
+# 3) Build local DB from bundled historic data (stocks + indices)
 docker-compose exec stocron-by-rtr python 2-download_all_stocks.py --build-db-only
 
 # 4) Download missing live symbols (recommended)
@@ -120,6 +120,9 @@ docker-compose exec stocron-by-rtr python 3-download_models.py
 docker-compose exec stocron-by-rtr python 4-train_classifier.py
 
 Open👉 http://localhost:8501
+
+Note: The container mounts `./models` and `./config` so downloaded models and
+auto-updated settings persist on the host.
 ```
 ---
 

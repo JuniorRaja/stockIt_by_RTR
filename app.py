@@ -833,6 +833,21 @@ def main():
         with tab1:
             st.markdown(f"### {data['stock_info'].get('name', symbol)}")
             st.markdown(f"*{results['explain'].summary}*")
+            info = data.get('stock_info', {})
+            col_info1, col_info2, col_info3, col_info4 = st.columns(4)
+            with col_info1:
+                st.metric("Current Price", f"₹{info.get('current_price', 0):,.2f}" if info.get('current_price') else "N/A")
+            with col_info2:
+                st.markdown(f"**Sector**: {info.get('sector', 'Unknown')}")
+            with col_info3:
+                st.markdown(f"**Industry**: {info.get('industry', 'Unknown')}")
+            with col_info4:
+                st.markdown(f"**City**: {info.get('city', 'Unknown')}")
+
+            summary = info.get('business_summary')
+            if summary:
+                with st.expander("Business Summary", expanded=False):
+                    st.write(summary)
             col1, col2 = st.columns(2)
             with col1:
                 st.plotly_chart(create_score_radar(signal.dimension_scores), use_container_width=True)
@@ -1049,8 +1064,8 @@ def main():
                     """)
         
         with tab3:
-            st.markdown("### This section is shown for ALL stocks, even BUY signals")
-            st.markdown("---")
+            #st.markdown("### This section is shown for ALL stocks, even BUY signals")
+            #st.markdown("---")
             render_why_not_buy(results['explain'].why_not_buy)
             st.markdown("---")
             st.subheader("Risk Factors")

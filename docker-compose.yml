@@ -9,8 +9,10 @@ services:
     volumes:
       # IMPORTANT: Mount data directory for offline operation
       - ./data:/app/data
-      # Mount config for easy editing
-      - ./config:/app/config:ro
+      # Mount config for easy editing (writable for ML setup)
+      - ./config:/app/config
+      # Persist downloaded ML models
+      - ./models:/app/models
     environment:
       - STREAMLIT_SERVER_PORT=8501
       - STREAMLIT_SERVER_ADDRESS=0.0.0.0
