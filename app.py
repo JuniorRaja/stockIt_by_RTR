@@ -690,7 +690,7 @@ def main():
     ]
     
     # Stock input with autocomplete
-    col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+    col1, col2, col3, col4, col5 = st.columns([3, 1, 1, 1, 1])
     with col1:
         if stock_list:
             # Build list: popular first, then rest alphabetically
@@ -721,6 +721,8 @@ def main():
         suggest = st.button("💡 Suggest", use_container_width=True)
     with col4:
         reset = st.button("🔄 Reset", use_container_width=True)
+    with col5:
+        refresh = st.button("🔁 Refresh", use_container_width=True)
     
     # Handle reset
     if reset:
@@ -728,6 +730,18 @@ def main():
             if key in st.session_state:
                 del st.session_state[key]
         st.rerun()
+
+    # Handle refresh
+    if refresh:
+        if not symbol:
+            st.warning("Select a stock symbol to refresh.")
+        else:
+            with st.spinner(f"Refreshing {symbol}..."):
+                success, message = app.data_manager.refresh_data(symbol)
+            if success:
+                st.success(message)
+            else:
+                st.error(message)
     
     # Toggle suggestions panel
     if suggest:
@@ -1052,6 +1066,23 @@ def main():
             st.plotly_chart(create_price_chart(data['price_history'], f"{symbol} Price"), use_container_width=True)
             st.subheader("Drawdown History")
             st.plotly_chart(create_drawdown_chart(data['price_history']), use_container_width=True)
+
+            st.markdown("---")
+            st.subheader("Index History")
+            index_options = app.data_manager.get_all_indices()
+            if index_options:
+                default_index = "NIFTY 50" if "NIFTY 50" in index_options else index_options[0]
+                index_symbol = st.selectbox("Select Index", index_options, index=index_options.index(default_index))
+                index_history = app.data_manager.get_index_history(index_symbol, years=30)
+                if index_history is None or index_history.empty:
+                    st.warning("No index history available.")
+                else:
+                    st.plotly_chart(
+                        create_price_chart(index_history, f"{index_symbol} Index", show_volume=False),
+                        use_container_width=True
+                    )
+            else:
+                st.info("No index datasets detected. Run `python 2-download_all_stocks.py --build-db-only`.")
         
         with tab5:
             st.subheader("⏰ Time Travel Mode")

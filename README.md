@@ -96,30 +96,28 @@ Docker Desktop installed and running.
 git clone https://github.com/RTR95/stockIt_by_RTR.git
 cd stockIt_by_RTR
 
-# 2) Install dependencies
-pip install -r requirements.txt
+# 2) Run the app via Docker
+docker-compose up --build
 
-# 3) Setup environment
-python 1-setup.py
+# 3) First-time DB build (required)
+docker-compose exec stocron-by-rtr python 2-download_all_stocks.py --build-db-only
 
-# 4) Hydrate the Data Lake - First Time Only (~2,200 NSE stocks)
-python 2-download_all_stocks.py
+# 4) Download missing live symbols (recommended)
+docker-compose exec stocron-by-rtr python 2-download_all_stocks.py
 
 # 5) Delisted stocks (recommended for survivorship bias)
-python scripts/download_delisted_stocks.py --export
-python scripts/download_delisted_stocks.py --download --years 30
+docker-compose exec stocron-by-rtr python scripts/download_delisted_stocks.py --export
+docker-compose exec stocron-by-rtr python scripts/download_delisted_stocks.py --download --years 30
+docker-compose exec stocron-by-rtr python 2-download_all_stocks.py --build-db-only
 
 # 6) (Optional) Enable real crude oil data
 export FRED_API_KEY="your_fred_api_key"
 
 # 7) Download ML models (optional; required for ML forecaster/explainer)
-python 3-download_models.py
+docker-compose exec stocron-by-rtr python 3-download_models.py
 
 # 8) Train classifier (required for ML signals)
-python 4-train_classifier.py
-
-# 9) Run the App through Container
-docker-compose up --build    
+docker-compose exec stocron-by-rtr python 4-train_classifier.py
 
 Open👉 http://localhost:8501
 ```

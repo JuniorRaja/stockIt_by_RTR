@@ -1,11 +1,11 @@
 version: '3.8'
 
 services:
-  indian-equity-intelligence:
+  stocron-by-rtr:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: indian-equity-intelligence
+    container_name: stocron-by-rtr
     ports:
       - "8501:8501"
     volumes:

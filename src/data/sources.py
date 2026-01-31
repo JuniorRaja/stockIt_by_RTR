@@ -17,6 +17,13 @@ import time
 import json
 
 from ..utils.config import get_config
+from .historic import (
+    list_historic_stock_symbols,
+    list_historic_index_names,
+    load_historic_stock_prices,
+    load_historic_index_prices,
+)
+from .refresh import refresh_symbol_data
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -223,6 +230,45 @@ class LocalDataSource:
             except Exception as e:
                 logger.debug(f"Error reading delisted price history for {symbol}: {e}")
         
+        # Try bundled historic datasets
+        historic_df = load_historic_stock_prices(symbol)
+        if historic_df is None and symbol.upper().startswith("NIFTY"):
+            historic_df = load_historic_index_prices(symbol)
+
+        if historic_df is not None and not historic_df.empty:
+            cutoff = datetime.now() - timedelta(days=years * 365)
+            historic_df = historic_df[historic_df["date"] >= cutoff]
+            if not historic_df.empty:
+                logger.info(f"Got {len(historic_df)} historic records for {symbol}")
+                return historic_df.sort_values("date")
+
+        return None
+
+    def get_index_history(self, index_symbol: str, years: int = 30) -> Optional[pd.DataFrame]:
+        """Get index history from local storage."""
+        db = self._get_db()
+        if db:
+            try:
+                cutoff = datetime.now() - timedelta(days=years * 365)
+                df = db.execute("""
+                    SELECT index_symbol, date, open, high, low, close, volume, source
+                    FROM index_history
+                    WHERE index_symbol = ? AND date >= ?
+                    ORDER BY date
+                """, [index_symbol, cutoff.date()]).fetchdf()
+                if not df.empty:
+                    df["date"] = pd.to_datetime(df["date"])
+                    return df
+            except Exception as e:
+                logger.debug(f"Error querying index history for {index_symbol}: {e}")
+
+        historic_df = load_historic_index_prices(index_symbol)
+        if historic_df is not None and not historic_df.empty:
+            cutoff = datetime.now() - timedelta(days=years * 365)
+            historic_df = historic_df[historic_df["date"] >= cutoff]
+            if not historic_df.empty:
+                return historic_df.sort_values("date")
+
         return None
     
     def get_all_symbols(self) -> List[str]:
@@ -255,8 +301,28 @@ class LocalDataSource:
                     symbols.add(f.stem)
             for f in self._delisted_dir.rglob("*.json"):
                 symbols.add(f.stem)
+
+        # From bundled historic dataset
+        for symbol in list_historic_stock_symbols():
+            symbols.add(symbol)
         
         return sorted(list(symbols))
+
+    def get_all_indices(self) -> List[str]:
+        """Get all available indices from local storage."""
+        indices = set()
+        db = self._get_db()
+        if db:
+            try:
+                rows = db.execute("SELECT DISTINCT index_symbol FROM index_history").fetchall()
+                indices.update(r[0] for r in rows)
+            except Exception:
+                pass
+
+        for index_name in list_historic_index_names():
+            indices.add(index_name)
+
+        return sorted(indices)
     
     def has_data(self) -> bool:
         """Check if local data exists."""
@@ -314,6 +380,62 @@ class YahooFinanceSource:
                 continue
         
         return None
+
+
+class JugaadDataSource:
+    """Jugaad Data source (optional online fallback)."""
+
+    def __init__(self):
+        self._stock_df = None
+        self._index_df = None
+
+    def _get_modules(self):
+        if self._stock_df is None and self._index_df is None:
+            try:
+                from jugaad_data.nse import stock_df, index_df
+                self._stock_df = stock_df
+                self._index_df = index_df
+            except Exception:
+                self._stock_df = None
+                self._index_df = None
+        return self._stock_df, self._index_df
+
+    def get_price_history(self, symbol: str, years: int = 10) -> Optional[pd.DataFrame]:
+        stock_df, index_df = self._get_modules()
+        if not stock_df and not index_df:
+            return None
+
+        end_date = datetime.now().date()
+        start_date = (datetime.now() - timedelta(days=years * 365)).date()
+
+        try:
+            if symbol.upper().startswith("NIFTY") and index_df:
+                df = index_df(symbol=symbol, from_date=start_date, to_date=end_date)
+            elif stock_df:
+                df = stock_df(symbol=symbol, from_date=start_date, to_date=end_date)
+            else:
+                return None
+        except Exception as e:
+            logger.debug(f"Jugaad data failed for {symbol}: {e}")
+            return None
+
+        if df is None or df.empty:
+            return None
+
+        df.columns = [c.lower().replace(" ", "_") for c in df.columns]
+        if "date" in df.columns:
+            df["date"] = pd.to_datetime(df["date"])
+
+        df["symbol"] = symbol.upper()
+        df["source"] = "jugaad_data"
+
+        required = ["symbol", "date", "open", "high", "low", "close", "volume", "source"]
+        missing = [c for c in required if c not in df.columns]
+        for col in missing:
+            df[col] = None
+
+        logger.info(f"Got {len(df)} Jugaad records for {symbol}")
+        return df[required].sort_values("date")
     
     def get_price_history(self, symbol: str, years: int = 10) -> Optional[pd.DataFrame]:
         """Get price history from Yahoo Finance."""
@@ -410,6 +532,7 @@ class DataSourceManager:
         self.offline_mode = offline_mode
         self.local = LocalDataSource()
         self.yahoo = YahooFinanceSource()
+        self.jugaad = JugaadDataSource()
         self.nse_tools = NSEToolsSource()
         
         self._info_cache: Dict[str, Dict[str, Any]] = {}
@@ -434,6 +557,12 @@ class DataSourceManager:
             try:
                 import yfinance
                 sources.append('yahoo_finance')
+            except:
+                pass
+
+            try:
+                import jugaad_data
+                sources.append('jugaad_data')
             except:
                 pass
             
@@ -485,12 +614,23 @@ class DataSourceManager:
         if (df is None or df.empty) and not self.offline_mode:
             logger.info(f"No local data, trying online for {symbol}...")
             df = self.yahoo.get_price_history(symbol, years)
+
+            if df is None or df.empty:
+                df = self.jugaad.get_price_history(symbol, years)
         
         if df is not None and not df.empty:
             self._price_cache[cache_key] = df
             return df
         
         logger.warning(f"No price history found for {symbol}")
+        return None
+
+    def get_index_history(self, index_symbol: str, years: int = 30) -> Optional[pd.DataFrame]:
+        """Get index history from local sources."""
+        index_symbol = index_symbol.upper().strip()
+        df = self.local.get_index_history(index_symbol, years)
+        if df is not None and not df.empty:
+            return df
         return None
     
     def get_financials(self, symbol: str) -> Dict[str, pd.DataFrame]:
@@ -548,6 +688,10 @@ class DataSourceManager:
                 return self._stock_list
         
         return pd.DataFrame(columns=['symbol', 'name', 'exchange'])
+
+    def get_all_indices(self) -> List[str]:
+        """Get list of available indices."""
+        return self.local.get_all_indices()
     
     def search_stocks(self, query: str, limit: int = 20) -> pd.DataFrame:
         """Search stocks by symbol or name."""
@@ -565,7 +709,7 @@ class DataSourceManager:
     def refresh_data(self, symbol: str) -> Tuple[bool, str]:
         """Force refresh data from online sources."""
         if self.offline_mode:
-            return False, "Running in offline mode. Run download_all_data.py to update."
+            logger.info("Offline mode enabled; attempting direct refresh anyway.")
         
         # Clear caches
         cache_key = symbol.upper()
@@ -576,11 +720,20 @@ class DataSourceManager:
             if key.startswith(cache_key):
                 del self._price_cache[key]
         
-        # Refetch
+        # Refresh local files from Yahoo Finance (gap fill)
+        try:
+            refresh_result = refresh_symbol_data(symbol)
+        except Exception as e:
+            return False, f"Refresh failed: {e}"
+
+        # Refetch (now that local is updated)
         info = self.get_stock_info(symbol, use_cache=False)
         prices = self.get_price_history(symbol, use_cache=False)
         
         if info and prices is not None and not prices.empty:
+            new_records = refresh_result.get("new_records", 0)
+            if refresh_result.get("updated"):
+                return True, f"Data refreshed: +{new_records} new records"
             return True, f"Data refreshed: {len(prices)} price records"
         elif info:
             return True, "Stock info refreshed, but no price history available"
