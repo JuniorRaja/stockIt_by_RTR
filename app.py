@@ -1109,8 +1109,8 @@ def main():
                     """)
         
         with tab3:
-            st.markdown("### This section is shown for ALL stocks, even BUY signals")
-            st.markdown("---")
+            #st.markdown("### This section is shown for ALL stocks, even BUY signals")
+            #st.markdown("---")
             render_why_not_buy(results['explain'].why_not_buy)
             st.markdown("---")
             st.subheader("Risk Factors")
