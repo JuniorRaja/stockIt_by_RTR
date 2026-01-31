@@ -455,7 +455,7 @@ class IndianEquityIntelligence:
             return {'stock_info': info, 'price_history': prices, 'financials': financials,
                     'nifty_history': nifty, 'shareholding': pd.DataFrame(), 'dividends': pd.DataFrame()}
     
-    def run_analysis(self, symbol: str, profile: UserProfile, data: dict):
+    def run_analysis(self, symbol: str, profile: UserProfile, data: dict, enable_ml: bool = True):
         with st.spinner("Running analysis..."):
             info = data['stock_info']
             prices = data['price_history']
@@ -477,9 +477,9 @@ class IndianEquityIntelligence:
                 red_flags=[{'severity': r.severity, 'description': r.description} for r in red_flags]
             )
             
-            # Run ML-enhanced analysis if available
+            # Run ML-enhanced analysis if enabled and available
             ml_prediction = None
-            if self._ml_enabled and self.ml_ensemble and self._ml_initialized:
+            if enable_ml and self._ml_enabled and self.ml_ensemble and self._ml_initialized:
                 try:
                     macro_data = None
                     if self.config.get('macro_config', {}).get('enabled', True):
@@ -564,21 +564,29 @@ def main():
     if 'app' not in st.session_state:
         st.session_state.app = IndianEquityIntelligence()
         st.session_state.ml_init_attempted = False
+    if 'enable_ml' not in st.session_state:
+        st.session_state.enable_ml = False
     app = st.session_state.app
     
     # Auto-initialize ML models on first load if configured
     if not st.session_state.ml_init_attempted:
         ml_config = app.config.get('ml_config', {})
-        if ml_config.get('enabled') and ml_config.get('auto_initialize', True):
+        attempted = False
+        if (
+            st.session_state.enable_ml
+            and ml_config.get('enabled')
+            and ml_config.get('auto_initialize', True)
+        ):
+            attempted = True
             with st.spinner("🚀 Initializing ML models... (first time only)"):
                 success, messages = app.initialize_ml()
                 if success:
                     st.toast("✓ ML models ready!", icon="🤖")
                 else:
-                    # Don't show error, just log it
                     for msg in messages:
                         logger.info(f"ML init: {msg}")
-        st.session_state.ml_init_attempted = True
+        if attempted:
+            st.session_state.ml_init_attempted = True
     
     with st.sidebar:
         st.title("📊 Stocron by RTR")
@@ -588,6 +596,13 @@ def main():
         profile = UserProfile(expected_return=profile_dict['expected_return'],
                               risk_appetite=profile_dict['risk_appetite'],
                               holding_tenure=profile_dict['holding_tenure'])
+        st.markdown("---")
+        st.subheader("Analysis Options")
+        st.session_state.enable_ml = st.checkbox(
+            "Enable ML (slower)",
+            value=st.session_state.enable_ml,
+            help="Uses Chronos/Qwen models; can add minutes per analysis."
+        )
         st.markdown("---")
         with st.expander("Under the Hood", expanded=False):
             st.subheader("Data Status")
@@ -641,7 +656,13 @@ def main():
                                     data = app.fetch_data(symbol)
                                     if data:
                                         st.session_state.data = data
-                                        st.session_state.results = app.run_analysis(symbol, current_profile, data)
+                                        st.session_state.enable_ml = True
+                                        st.session_state.results = app.run_analysis(
+                                            symbol,
+                                            current_profile,
+                                            data,
+                                            enable_ml=True
+                                        )
                                         st.rerun()
             else:
                 st.info("ML disabled in config")
@@ -807,7 +828,12 @@ def main():
             data = app.fetch_data(symbol)
             if data:
                 st.session_state.data = data
-                st.session_state.results = app.run_analysis(symbol, profile, data)
+                st.session_state.results = app.run_analysis(
+                    symbol,
+                    profile,
+                    data,
+                    enable_ml=st.session_state.enable_ml
+                )
     
     if analyze and symbol:
         st.session_state.symbol = symbol
@@ -815,7 +841,12 @@ def main():
         data = app.fetch_data(symbol)
         if data:
             st.session_state.data = data
-            st.session_state.results = app.run_analysis(symbol, profile, data)
+            st.session_state.results = app.run_analysis(
+                symbol,
+                profile,
+                data,
+                enable_ml=st.session_state.enable_ml
+            )
     
     if hasattr(st.session_state, 'results') and st.session_state.results:
         results = st.session_state.results
@@ -834,9 +865,13 @@ def main():
             st.markdown(f"### {data['stock_info'].get('name', symbol)}")
             st.markdown(f"*{results['explain'].summary}*")
             info = data.get('stock_info', {})
+            st.subheader("Company Profile")
             col_info1, col_info2, col_info3, col_info4 = st.columns(4)
             with col_info1:
-                st.metric("Current Price", f"₹{info.get('current_price', 0):,.2f}" if info.get('current_price') else "N/A")
+                st.metric(
+                    "Current Price",
+                    f"₹{info.get('current_price', 0):,.2f}" if info.get('current_price') else "N/A"
+                )
             with col_info2:
                 st.markdown(f"**Sector**: {info.get('sector', 'Unknown')}")
             with col_info3:
@@ -878,6 +913,8 @@ def main():
         with tab2:
             # ML Insights Tab - NEW
             st.markdown("### 🤖 ML-Enhanced Analysis")
+            if not st.session_state.get('enable_ml', False):
+                st.info("ML is disabled for this run. Enable it in the sidebar to include ML insights.")
             
             ml_prediction = results.get('ml_prediction')
             
@@ -1041,7 +1078,12 @@ def main():
                             data = app.fetch_data(symbol)
                             if data:
                                 st.session_state.data = data
-                                st.session_state.results = app.run_analysis(symbol, current_profile, data)
+                                st.session_state.results = app.run_analysis(
+                                    symbol,
+                                    current_profile,
+                                    data,
+                                    enable_ml=True
+                                )
                                 st.rerun()
                 
                 # Show download instructions
