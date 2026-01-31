@@ -525,7 +525,7 @@ class IndianEquityIntelligence:
                 red_flags=[{'severity': r.severity, 'description': r.description} for r in red_flags]
             )
             
-            # Run ML-enhanced analysis if available
+            # Run ML-enhanced analysis if enabled and available
             ml_prediction = None
             if enable_ml and self._ml_enabled and self.ml_ensemble and self._ml_initialized:
                 try:
@@ -616,21 +616,29 @@ def main():
     if 'app' not in st.session_state:
         st.session_state.app = IndianEquityIntelligence()
         st.session_state.ml_init_attempted = False
+    if 'enable_ml' not in st.session_state:
+        st.session_state.enable_ml = False
     app = st.session_state.app
     
     # Auto-initialize ML models on first load if configured
     if not st.session_state.ml_init_attempted:
         ml_config = app.config.get('ml_config', {})
-        if ml_config.get('enabled') and ml_config.get('auto_initialize', True):
+        attempted = False
+        if (
+            st.session_state.enable_ml
+            and ml_config.get('enabled')
+            and ml_config.get('auto_initialize', True)
+        ):
+            attempted = True
             with st.spinner("🚀 Initializing ML models... (first time only)"):
                 success, messages = app.initialize_ml()
                 if success:
                     st.toast("✓ ML models ready!", icon="🤖")
                 else:
-                    # Don't show error, just log it
                     for msg in messages:
                         logger.info(f"ML init: {msg}")
-        st.session_state.ml_init_attempted = True
+        if attempted:
+            st.session_state.ml_init_attempted = True
     
     with st.sidebar:
         st.title("📊 Stocron by RTR")
@@ -640,6 +648,13 @@ def main():
         profile = UserProfile(expected_return=profile_dict['expected_return'],
                               risk_appetite=profile_dict['risk_appetite'],
                               holding_tenure=profile_dict['holding_tenure'])
+        st.markdown("---")
+        st.subheader("Analysis Options")
+        st.session_state.enable_ml = st.checkbox(
+            "Enable ML (slower)",
+            value=st.session_state.enable_ml,
+            help="Uses Chronos/Qwen models; can add minutes per analysis."
+        )
         st.markdown("---")
         with st.expander("Under the Hood", expanded=False):
             st.subheader("Data Status")
@@ -693,7 +708,13 @@ def main():
                                     data = app.fetch_data(symbol)
                                     if data:
                                         st.session_state.data = data
-                                        st.session_state.results = app.run_analysis(symbol, current_profile, data)
+                                        st.session_state.enable_ml = True
+                                        st.session_state.results = app.run_analysis(
+                                            symbol,
+                                            current_profile,
+                                            data,
+                                            enable_ml=True
+                                        )
                                         st.rerun()
             else:
                 st.info("ML disabled in config")
@@ -742,7 +763,7 @@ def main():
     ]
     
     # Stock input with autocomplete
-    col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+    col1, col2, col3, col4, col5 = st.columns([3, 1, 1, 1, 1])
     with col1:
         if stock_list:
             # Build list: popular first, then rest alphabetically
@@ -773,6 +794,8 @@ def main():
         suggest = st.button("💡 Suggest", use_container_width=True)
     with col4:
         reset = st.button("🔄 Reset", use_container_width=True)
+    with col5:
+        refresh = st.button("🔁 Refresh", use_container_width=True)
     
     # Handle reset
     if reset:
@@ -780,6 +803,18 @@ def main():
             if key in st.session_state:
                 del st.session_state[key]
         st.rerun()
+
+    # Handle refresh
+    if refresh:
+        if not symbol:
+            st.warning("Select a stock symbol to refresh.")
+        else:
+            with st.spinner(f"Refreshing {symbol}..."):
+                success, message = app.data_manager.refresh_data(symbol)
+            if success:
+                st.success(message)
+            else:
+                st.error(message)
     
     # Toggle suggestions panel
     if suggest:
@@ -867,7 +902,12 @@ def main():
             data = app.fetch_data(symbol)
             if data:
                 st.session_state.data = data
-                st.session_state.results = app.run_analysis(symbol, profile, data)
+                st.session_state.results = app.run_analysis(
+                    symbol,
+                    profile,
+                    data,
+                    enable_ml=st.session_state.enable_ml
+                )
     
     if analyze and symbol:
         st.session_state.symbol = symbol
@@ -875,7 +915,12 @@ def main():
         data = app.fetch_data(symbol)
         if data:
             st.session_state.data = data
-            st.session_state.results = app.run_analysis(symbol, profile, data)
+            st.session_state.results = app.run_analysis(
+                symbol,
+                profile,
+                data,
+                enable_ml=st.session_state.enable_ml
+            )
     
     if hasattr(st.session_state, 'results') and st.session_state.results:
         results = st.session_state.results
@@ -893,6 +938,25 @@ def main():
         with tab1:
             st.markdown(f"### {data['stock_info'].get('name', symbol)}")
             st.markdown(f"*{results['explain'].summary}*")
+            info = data.get('stock_info', {})
+            st.subheader("Company Profile")
+            col_info1, col_info2, col_info3, col_info4 = st.columns(4)
+            with col_info1:
+                st.metric(
+                    "Current Price",
+                    f"₹{info.get('current_price', 0):,.2f}" if info.get('current_price') else "N/A"
+                )
+            with col_info2:
+                st.markdown(f"**Sector**: {info.get('sector', 'Unknown')}")
+            with col_info3:
+                st.markdown(f"**Industry**: {info.get('industry', 'Unknown')}")
+            with col_info4:
+                st.markdown(f"**City**: {info.get('city', 'Unknown')}")
+
+            summary = info.get('business_summary')
+            if summary:
+                with st.expander("Business Summary", expanded=False):
+                    st.write(summary)
             col1, col2 = st.columns(2)
             with col1:
                 st.plotly_chart(create_score_radar(signal.dimension_scores), use_container_width=True)
@@ -923,6 +987,8 @@ def main():
         with tab2:
             # ML Insights Tab - NEW
             st.markdown("### 🤖 ML-Enhanced Analysis")
+            if not st.session_state.get('enable_ml', False):
+                st.info("ML is disabled for this run. Enable it in the sidebar to include ML insights.")
             
             ml_prediction = results.get('ml_prediction')
             
@@ -1086,7 +1152,12 @@ def main():
                             data = app.fetch_data(symbol)
                             if data:
                                 st.session_state.data = data
-                                st.session_state.results = app.run_analysis(symbol, current_profile, data)
+                                st.session_state.results = app.run_analysis(
+                                    symbol,
+                                    current_profile,
+                                    data,
+                                    enable_ml=True
+                                )
                                 st.rerun()
                 
                 # Show download instructions
@@ -1126,6 +1197,23 @@ def main():
             st.plotly_chart(create_price_chart(data['price_history'], f"{symbol} Price"), use_container_width=True)
             st.subheader("Drawdown History")
             st.plotly_chart(create_drawdown_chart(data['price_history']), use_container_width=True)
+
+            st.markdown("---")
+            st.subheader("Index History")
+            index_options = app.data_manager.get_all_indices()
+            if index_options:
+                default_index = "NIFTY 50" if "NIFTY 50" in index_options else index_options[0]
+                index_symbol = st.selectbox("Select Index", index_options, index=index_options.index(default_index))
+                index_history = app.data_manager.get_index_history(index_symbol, years=30)
+                if index_history is None or index_history.empty:
+                    st.warning("No index history available.")
+                else:
+                    st.plotly_chart(
+                        create_price_chart(index_history, f"{index_symbol} Index", show_volume=False),
+                        use_container_width=True
+                    )
+            else:
+                st.info("No index datasets detected. Run `python 2-download_all_stocks.py --build-db-only`.")
         
         with tab5:
             st.subheader("⏰ Time Travel Mode")

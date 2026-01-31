@@ -25,14 +25,15 @@ env/
 # Data files (generated locally)
 data/cache/
 data/db/
-data/macro/
 data/stock_info/
 data/prices/
 *.parquet
 *.db
 
 # Models
-models/*.pkl
+models/classifier/
+models/explainer/
+models/forecaster/
 
 # Logs
 *.log

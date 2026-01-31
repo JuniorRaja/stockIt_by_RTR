@@ -24,6 +24,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import StringIO
 import csv
 
+from src.data.historic import (
+    list_historic_stock_symbols,
+    list_historic_index_names,
+    load_historic_stock_prices,
+    load_historic_index_prices,
+)
+from src.data.refresh import refresh_symbol_data
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -41,6 +49,9 @@ PRICE_DIR = DATA_DIR / 'prices'
 INFO_DIR = DATA_DIR / 'stock_info'
 PROGRESS_FILE = DATA_DIR / 'download_progress.json'
 STOCK_LIST_FILE = DATA_DIR / 'stock_lists' / 'all_nse_stocks.json'
+HISTORIC_STOCK_INDEX_FILE = DATA_DIR / 'stock_lists' / 'historic_stock_symbols.json'
+HISTORIC_INDEX_LIST_FILE = DATA_DIR / 'stock_lists' / 'historic_index_names.json'
+MISSING_STOCK_LIST_FILE = DATA_DIR / 'stock_lists' / 'missing_live_symbols.json'
 
 # 30 years of data
 YEARS_OF_DATA = 30
@@ -308,6 +319,60 @@ def get_comprehensive_stock_list() -> dict:
             result[sym] = {'symbol': sym, 'name': sym, 'series': 'EQ'}
     
     return result
+
+
+def get_local_stock_symbols() -> list:
+    """Get stock symbols already available locally (historic + downloaded)."""
+    symbols = set()
+
+    if PRICE_DIR.exists():
+        for f in PRICE_DIR.glob("*.parquet"):
+            symbols.add(f.stem.upper())
+
+    if INFO_DIR.exists():
+        for f in INFO_DIR.glob("*.json"):
+            symbols.add(f.stem.upper())
+
+    for symbol in list_historic_stock_symbols():
+        symbols.add(symbol.upper())
+
+    return sorted(symbols)
+
+
+def write_symbol_index(path: Path, items: list, metadata: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(
+            {
+                "updated_at": datetime.now().isoformat(),
+                "count": len(items),
+                "items": items,
+                **metadata,
+            },
+            f,
+            indent=2,
+        )
+
+
+def get_missing_live_symbols(live_symbols: list, local_symbols: list) -> list:
+    """Return live NSE symbols that are missing locally."""
+    local_set = {s.upper() for s in local_symbols}
+    return [s for s in live_symbols if s["symbol"].upper() not in local_set]
+
+
+def refresh_symbols(symbols: list) -> dict:
+    """Refresh symbols using gap-fill logic."""
+    results = {"updated": 0, "skipped": 0, "failed": 0, "records_added": 0}
+    for symbol in symbols:
+        result = refresh_symbol_data(symbol)
+        if result.get("updated"):
+            results["updated"] += 1
+            results["records_added"] += result.get("new_records", 0)
+        elif result.get("error"):
+            results["failed"] += 1
+        else:
+            results["skipped"] += 1
+    return results
 
 
 def load_progress():
@@ -594,6 +659,20 @@ def build_database():
                 PRIMARY KEY (symbol, date)
             )
         """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS index_history (
+                index_symbol VARCHAR,
+                date DATE,
+                open DOUBLE,
+                high DOUBLE,
+                low DOUBLE,
+                close DOUBLE,
+                volume BIGINT,
+                source VARCHAR,
+                PRIMARY KEY (index_symbol, date)
+            )
+        """)
         
         # Load stock info
         info_files = list(INFO_DIR.glob("*.json"))
@@ -641,17 +720,62 @@ def build_database():
                 """)
             except:
                 pass
+
+        # Load historic stock history (CSV datasets)
+        historic_stock_symbols = list_historic_stock_symbols()
+        logger.info(f"Loading {len(historic_stock_symbols)} historic stock files...")
+        for symbol in historic_stock_symbols:
+            try:
+                df = load_historic_stock_prices(symbol)
+                if df is None or df.empty:
+                    continue
+                conn.register("hist_stock_df", df)
+                conn.execute("""
+                    INSERT OR REPLACE INTO price_history
+                    SELECT symbol, date, open, high, low, close,
+                           CAST(volume AS BIGINT), source
+                    FROM hist_stock_df
+                """)
+                conn.unregister("hist_stock_df")
+            except Exception as e:
+                logger.debug(f"Historic stock load failed for {symbol}: {e}")
+
+        # Load historic index history
+        index_names = list_historic_index_names()
+        logger.info(f"Loading {len(index_names)} historic index files...")
+        for index_name in index_names:
+            try:
+                df = load_historic_index_prices(index_name)
+                if df is None or df.empty:
+                    continue
+                df = df.rename(columns={"symbol": "index_symbol"})
+                conn.register("idx_df", df)
+                conn.execute("""
+                    INSERT OR REPLACE INTO index_history
+                    SELECT index_symbol, date, open, high, low, close,
+                           CAST(volume AS BIGINT), source
+                    FROM idx_df
+                """)
+                conn.unregister("idx_df")
+            except Exception as e:
+                logger.debug(f"Index load failed for {index_name}: {e}")
         
         # Create indexes
         conn.execute("CREATE INDEX IF NOT EXISTS idx_price_symbol ON price_history(symbol)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_price_date ON price_history(date)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_index_symbol ON index_history(index_symbol)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_index_date ON index_history(date)")
         
         stock_count = conn.execute("SELECT COUNT(*) FROM stocks").fetchone()[0]
         price_count = conn.execute("SELECT COUNT(*) FROM price_history").fetchone()[0]
+        index_count = conn.execute("SELECT COUNT(*) FROM index_history").fetchone()[0]
         
         # Get date range
         date_range = conn.execute("""
             SELECT MIN(date), MAX(date) FROM price_history
+        """).fetchone()
+        index_date_range = conn.execute("""
+            SELECT MIN(date), MAX(date) FROM index_history
         """).fetchone()
         
         conn.close()
@@ -659,8 +783,11 @@ def build_database():
         logger.info(f"Database built successfully!")
         logger.info(f"  Stocks: {stock_count:,}")
         logger.info(f"  Price records: {price_count:,}")
+        logger.info(f"  Index records: {index_count:,}")
         if date_range[0] and date_range[1]:
             logger.info(f"  Date range: {date_range[0]} to {date_range[1]}")
+        if index_date_range[0] and index_date_range[1]:
+            logger.info(f"  Index date range: {index_date_range[0]} to {index_date_range[1]}")
         logger.info(f"  Database: {db_path}")
         
     except Exception as e:
@@ -673,10 +800,13 @@ def main():
     parser.add_argument('--resume', action='store_true', help='Resume interrupted download')
     parser.add_argument('--build-db-only', action='store_true', help='Only build database')
     parser.add_argument('--retry-failed', action='store_true', help='Retry previously failed downloads')
+    parser.add_argument('--download-all', action='store_true', help='Download all NSE stocks (ignore local data)')
+    parser.add_argument('--refresh-symbol', type=str, help='Refresh a symbol (comma-separated)')
+    parser.add_argument('--refresh-missing', action='store_true', help='Refresh only missing live symbols')
     args = parser.parse_args()
     
     print("=" * 70)
-    print("INDIAN EQUITY INTELLIGENCE - COMPLETE MARKET DATA DOWNLOAD")
+    print("STOCRON BY RTR - COMPLETE MARKET DATA DOWNLOAD")
     print("=" * 70)
     print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Data period: {YEARS_OF_DATA} years of historical data")
@@ -696,6 +826,37 @@ def main():
     setup_directories()
     
     if args.build_db_only:
+        build_database()
+        return
+
+    # Build local symbol/index lists from bundled datasets
+    historic_symbols = list_historic_stock_symbols()
+    if historic_symbols:
+        write_symbol_index(
+            HISTORIC_STOCK_INDEX_FILE,
+            historic_symbols,
+            {"source": "historic_nse_dataset"},
+        )
+
+    historic_index_names = list_historic_index_names()
+    if historic_index_names:
+        write_symbol_index(
+            HISTORIC_INDEX_LIST_FILE,
+            historic_index_names,
+            {"source": "historic_nifty_indices"},
+        )
+
+    # Refresh specific symbols on demand
+    if args.refresh_symbol:
+        refresh_list = [s.strip().upper() for s in args.refresh_symbol.split(",") if s.strip()]
+        if not refresh_list:
+            print("No symbols provided for refresh.")
+            return
+        print(f"Refreshing {len(refresh_list)} symbols...")
+        results = refresh_symbols(refresh_list)
+        print(f"Updated: {results['updated']} | Skipped: {results['skipped']} | "
+              f"Failed: {results['failed']} | Records added: {results['records_added']:,}")
+        print("Rebuilding database...")
         build_database()
         return
     
@@ -755,12 +916,42 @@ def main():
             'count': len(symbols),
             'stocks': symbols
         }, f, indent=2)
+
+    # Compute missing symbols vs local data
+    local_symbols = get_local_stock_symbols()
+    missing_symbols = get_missing_live_symbols(symbols, local_symbols)
+    if missing_symbols:
+        write_symbol_index(
+            MISSING_STOCK_LIST_FILE,
+            [s["symbol"] for s in missing_symbols],
+            {"source": "nse_live_vs_local"},
+        )
+
+    if args.refresh_missing:
+        if not missing_symbols:
+            print("No missing symbols to refresh.")
+            return
+        print(f"Refreshing {len(missing_symbols)} missing symbols...")
+        results = refresh_symbols([s["symbol"] for s in missing_symbols])
+        print(f"Updated: {results['updated']} | Skipped: {results['skipped']} | "
+              f"Failed: {results['failed']} | Records added: {results['records_added']:,}")
+        print("Rebuilding database...")
+        build_database()
+        return
     
     print()
     print("=" * 70)
     print("STEP 2: Download Configuration")
     print("=" * 70)
-    print(f"Total stocks to download: {len(symbols)}")
+    symbols_to_download = symbols
+    if local_symbols and not args.download_all:
+        symbols_to_download = missing_symbols
+        print(f"Local symbols detected: {len(local_symbols)}")
+        print(f"Missing live symbols: {len(symbols_to_download)} (downloading missing only)")
+    else:
+        print(f"Downloading full live list (local count: {len(local_symbols)})")
+
+    print(f"Total stocks to download: {len(symbols_to_download)}")
     print(f"Historical data: {YEARS_OF_DATA} years per stock")
     
     # Limit workers to avoid rate limiting
@@ -768,12 +959,18 @@ def main():
     print(f"Parallel workers: {workers} (limited to avoid rate limiting)")
     
     # More realistic estimate with rate limiting
-    est_time = len(symbols) * 2 / workers / 60
+    est_time = len(symbols_to_download) * 2 / workers / 60
     print(f"Estimated time: {est_time:.0f}-{est_time*2:.0f} minutes (with rate limiting)")
     print()
     print("NOTE: Using rate limiting to avoid Yahoo Finance blocks.")
     print("      If many fail, run: python download_all_stocks.py --retry-failed")
     print()
+
+    if not symbols_to_download:
+        print("All live symbols already exist locally. Nothing to download.")
+        print("Rebuilding database...")
+        build_database()
+        return
     
     response = input("Start download? [y/N]: ")
     if response.lower() != 'y':
@@ -786,7 +983,7 @@ def main():
     print("=" * 70)
     
     start_time = time.time()
-    success, failed, total_records, failed_symbols = download_all(symbols, workers=workers, resume=args.resume)
+    success, failed, total_records, failed_symbols = download_all(symbols_to_download, workers=workers, resume=args.resume)
     elapsed = time.time() - start_time
     
     # Auto-retry failed downloads if there are many failures
