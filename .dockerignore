@@ -12,18 +12,29 @@ venv/
 ENV/
 env/
 .venv/
+.eggs/
+*.egg-info/
 
 # IDE
 .idea/
 .vscode/
 *.swp
 *~
+.cursor/
 
-# Data (will be mounted as volume)
+# Data (will be mounted as volume - CRITICAL for size)
 data/
 
-# Models
-models/*.pkl
+# Models (ALL model files - mounted as volume, not baked in)
+models/
+*.pkl
+*.gguf
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.onnx
+*.h5
 
 # Logs
 *.log
@@ -32,12 +43,21 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # Docker
-Dockerfile
-docker-compose.yml
+Dockerfile*
+docker-compose*.yml
 .dockerignore
 
 # Misc
 *.md
 LICENSE
+.env*
+*.ipynb
+.ipynb_checkpoints/
+
+# Cache directories
+.cache/
+.huggingface/
+~/.cache/
