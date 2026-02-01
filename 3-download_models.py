@@ -15,15 +15,7 @@ from pathlib import Path
 
 def get_system_info():
     """Get system memory and GPU info."""
-    info = {
-        "ram_gb": 8, 
-        "gpu": None, 
-        "gpu_vram_gb": 0,
-        "gpu_name": None,
-        "cuda_version": None,
-        "directml_available": False,
-        "openvino_available": False,
-    }
+    info = {"ram_gb": 8, "gpu": None, "gpu_vram_gb": 0}
     
     try:
         import psutil
@@ -31,43 +23,15 @@ def get_system_info():
     except ImportError:
         pass
     
-    # Check for NVIDIA GPU
+    # Check for GPU
     try:
         import torch
         if torch.cuda.is_available():
             info["gpu"] = "nvidia"
             info["gpu_vram_gb"] = torch.cuda.get_device_properties(0).total_memory / (1024**3)
-            info["gpu_name"] = torch.cuda.get_device_name(0)
-            info["cuda_version"] = torch.version.cuda
         elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
             info["gpu"] = "apple_silicon"
             info["gpu_vram_gb"] = info["ram_gb"]  # Shared memory on Apple Silicon
-            info["gpu_name"] = "Apple Silicon GPU"
-    except ImportError:
-        pass
-    
-    # Check for DirectML (Windows NPU/AMD/Intel GPU)
-    try:
-        import torch_directml
-        device_count = torch_directml.device_count()
-        if device_count > 0:
-            info["directml_available"] = True
-            if not info["gpu"]:
-                info["gpu"] = "directml"
-                info["gpu_name"] = torch_directml.device_name(0)
-    except ImportError:
-        pass
-    
-    # Check for OpenVINO (Intel NPU)
-    try:
-        from openvino.runtime import Core
-        core = Core()
-        devices = core.available_devices
-        if "NPU" in devices or "GPU" in devices:
-            info["openvino_available"] = True
-            if not info["gpu"]:
-                info["gpu"] = "openvino"
-                info["gpu_name"] = "Intel " + ("NPU" if "NPU" in devices else "GPU")
     except ImportError:
         pass
     
@@ -86,24 +50,11 @@ def print_system_info(info):
     print(f"\n📊 Detected System:")
     print(f"   RAM: {info['ram_gb']:.1f} GB")
     if info['gpu']:
-        gpu_type = info['gpu'].replace('_', ' ').title()
-        print(f"   GPU: {gpu_type}")
-        if info.get('gpu_name'):
-            print(f"   GPU Name: {info['gpu_name']}")
+        print(f"   GPU: {info['gpu'].replace('_', ' ').title()}")
         if info['gpu'] == 'nvidia':
             print(f"   VRAM: {info['gpu_vram_gb']:.1f} GB")
-            if info.get('cuda_version'):
-                print(f"   CUDA Version: {info['cuda_version']}")
-        elif info['gpu'] == 'apple_silicon':
-            print(f"   Shared Memory: {info['gpu_vram_gb']:.1f} GB")
     else:
         print("   GPU: Not detected (will use CPU)")
-    
-    # Show additional accelerator options
-    if info.get('directml_available') and info['gpu'] != 'directml':
-        print(f"   DirectML: Available (alternative GPU backend)")
-    if info.get('openvino_available') and info['gpu'] != 'openvino':
-        print(f"   OpenVINO: Available (Intel NPU/GPU)")
 
 
 def get_user_choice():
@@ -121,16 +72,14 @@ def get_user_choice():
     print()
     print("  [4] 🎯 CUSTOM   - Choose individual models")
     print()
-    print("  [5] 🔧 GPU TEST - Run GPU/NPU diagnostics")
-    print()
     print("  [0] ❌ EXIT     - Cancel and exit")
     print("-" * 60)
     
     while True:
-        choice = input("\nEnter your choice [1-5, 0 to exit]: ").strip()
-        if choice in ['0', '1', '2', '3', '4', '5']:
+        choice = input("\nEnter your choice [1-4, 0 to exit]: ").strip()
+        if choice in ['0', '1', '2', '3', '4']:
             return choice
-        print("Invalid choice. Please enter 1, 2, 3, 4, 5, or 0.")
+        print("Invalid choice. Please enter 1, 2, 3, 4, or 0.")
 
 
 def get_custom_choices():
@@ -418,113 +367,12 @@ def print_summary(config):
     print("\n🚀 Next steps:")
     print("   1. docker-compose exec stocron-by-rtr python 4-train_classifier.py")
     print("   2. Run the app: Open👉 http://localhost:8501")
-    
-    # GPU Setup guidance
-    system_info = get_system_info()
-    if system_info.get('gpu') == 'nvidia':
-        print("\n" + "-" * 60)
-        print("🎮 GPU ACCELERATION SETUP")
-        print("-" * 60)
-        print(f"\n   Detected: {system_info.get('gpu_name', 'NVIDIA GPU')}")
-        print(f"   VRAM: {system_info['gpu_vram_gb']:.1f} GB")
-        print("\n   To enable GPU for all models, run:")
-        print("\n   # For Chronos (automatic if PyTorch has CUDA)")
-        print("   pip install torch --index-url https://download.pytorch.org/whl/cu121")
-        print("\n   # For Qwen LLM (requires recompilation)")
-        print("   pip uninstall llama-cpp-python -y")
-        print("   CMAKE_ARGS=\"-DLLAMA_CUDA=on\" pip install llama-cpp-python --no-cache-dir")
-        print("\n   💡 Tip: Run 'python -c \"from src.ml_models.base import print_device_diagnostics; print_device_diagnostics()\"'")
-        print("      to verify GPU detection")
-    elif system_info.get('gpu') == 'apple_silicon':
-        print("\n" + "-" * 60)
-        print("🍎 APPLE SILICON GPU SETUP")
-        print("-" * 60)
-        print("\n   Detected: Apple Silicon")
-        print("\n   To enable Metal acceleration for Qwen:")
-        print("   pip uninstall llama-cpp-python -y")
-        print("   CMAKE_ARGS=\"-DLLAMA_METAL=on\" pip install llama-cpp-python --no-cache-dir")
-    elif not system_info.get('gpu'):
-        print("\n" + "-" * 60)
-        print("⚠️  NO GPU DETECTED")
-        print("-" * 60)
-        print("\n   Models will run on CPU (slower performance)")
-        print("\n   If you have a GPU, ensure drivers are installed:")
-        print("   - NVIDIA: Install CUDA Toolkit from nvidia.com")
-        print("   - AMD/Intel (Windows): pip install torch-directml")
-        print("   - Intel NPU: pip install openvino")
-    
+    print("   3. ML will auto-initialize when you start the app!")
     print()
-
-
-def run_gpu_diagnostics():
-    """Run detailed GPU diagnostics."""
-    print("\n" + "=" * 60)
-    print("  GPU/NPU DIAGNOSTICS")
-    print("=" * 60)
-    
-    # Try to import the diagnostic function from the ML module
-    try:
-        from src.ml_models.base import print_device_diagnostics, get_device_info
-        info = print_device_diagnostics()
-        
-        # Additional recommendations
-        print("\n" + "=" * 60)
-        print("  RECOMMENDATIONS")
-        print("=" * 60)
-        
-        best = info.get("best_device", "cpu")
-        
-        if best == "cuda":
-            print("\n✓ Your system is ready for GPU acceleration!")
-            print("\n  To ensure llama-cpp-python uses your GPU:")
-            print("  pip uninstall llama-cpp-python -y")
-            print("  CMAKE_ARGS=\"-DLLAMA_CUDA=on\" pip install llama-cpp-python --no-cache-dir")
-            
-        elif best == "mps":
-            print("\n✓ Apple Silicon detected!")
-            print("\n  To enable Metal acceleration:")
-            print("  pip uninstall llama-cpp-python -y") 
-            print("  CMAKE_ARGS=\"-DLLAMA_METAL=on\" pip install llama-cpp-python --no-cache-dir")
-            
-        elif best.startswith("directml"):
-            print("\n✓ DirectML device detected!")
-            print("\n  For PyTorch models, install:")
-            print("  pip install torch-directml")
-            print("\n  Note: llama-cpp-python may still use CPU")
-            
-        elif best.startswith("openvino"):
-            print("\n✓ Intel NPU/GPU detected via OpenVINO!")
-            print("\n  For optimized inference, consider:")
-            print("  pip install openvino optimum[openvino]")
-            
-        else:
-            print("\n⚠ No GPU/NPU detected. Models will run on CPU.")
-            print("\n  If you have a GPU, check:")
-            print("  - NVIDIA: Install CUDA Toolkit and cudnn")
-            print("  - AMD/Intel (Windows): pip install torch-directml")
-            print("  - Intel (Linux): pip install openvino")
-        
-        print()
-        return info
-        
-    except ImportError as e:
-        print(f"\n⚠ Could not import ML module: {e}")
-        print("  Running basic diagnostics...\n")
-        
-        # Fallback basic diagnostics
-        info = get_system_info()
-        print_system_info(info)
-        
-        return info
 
 
 def main():
     print_header()
-    
-    # Check for diagnostic flag
-    if len(sys.argv) > 1 and sys.argv[1] in ['--diagnose', '--gpu', '-d']:
-        run_gpu_diagnostics()
-        sys.exit(0)
     
     # Check if running from correct directory
     if not Path("app.py").exists():
@@ -541,12 +389,6 @@ def main():
     
     if choice == '0':
         print("\n👋 Cancelled. No models downloaded.")
-        sys.exit(0)
-    
-    if choice == '5':
-        run_gpu_diagnostics()
-        print("\n" + "-" * 60)
-        print("Run this script again to download models.")
         sys.exit(0)
     
     if choice == '4':

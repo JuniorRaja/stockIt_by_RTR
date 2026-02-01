@@ -137,49 +137,23 @@ class ChronosForecaster(TimeSeriesForecaster):
             if device == "auto":
                 device = self._detect_best_device()
             
-            # Handle special device types
-            actual_device = device
-            if device.startswith("openvino") or device == "directml":
-                # These don't work directly with Chronos, fallback to CPU
-                self._logger.warning(f"{device} not supported by Chronos, falling back to CPU")
-                actual_device = "cpu"
-            
-            # Set dtype based on device for optimal performance
-            if actual_device == "cuda":
-                # Use bfloat16 for CUDA (faster inference)
+            # Set dtype based on device
+            if device == "cuda":
                 dtype = torch.bfloat16
-                # Verify CUDA is actually working
-                if not torch.cuda.is_available():
-                    self._logger.warning("CUDA requested but not available, falling back to CPU")
-                    actual_device = "cpu"
-                    dtype = torch.float32
-                else:
-                    # Log GPU info for debugging
-                    gpu_name = torch.cuda.get_device_name(0)
-                    gpu_mem = torch.cuda.get_device_properties(0).total_memory / (1024**3)
-                    self._logger.info(f"Using CUDA GPU: {gpu_name} ({gpu_mem:.1f} GB VRAM)")
-            elif actual_device == "mps":
-                # MPS works best with float32
-                dtype = torch.float32
-                if not (hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()):
-                    self._logger.warning("MPS requested but not available, falling back to CPU")
-                    actual_device = "cpu"
             else:
                 dtype = torch.float32
             
-            self._logger.info(f"Loading Chronos model from {model_id} on {actual_device} with {dtype}")
+            self._logger.info(f"Loading Chronos model from {model_id} on {device}")
             
             self._pipeline = ChronosPipeline.from_pretrained(
                 model_id,
-                device_map=actual_device,
-                dtype=dtype,
+                device_map=device,
+                dtype=dtype,  # Updated from torch_dtype (deprecated)
             )
             
-            # Store actual device used for reporting
-            self._actual_device = actual_device
             self._model = self._pipeline
             self._status = ModelStatus.READY
-            self._logger.info(f"Chronos model loaded successfully on {actual_device}")
+            self._logger.info("Chronos model loaded successfully")
             return True
             
         except Exception as e:
