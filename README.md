@@ -97,159 +97,141 @@ The system is containerized for stability and reproducibility.
 ---
 
 ## Installation & Usage (Docker🐳)
+
 > We strongly recommend running Stocron via Docker to avoid dependency hell.
-
-### Prerequisites
-- Docker Desktop installed and running
-- **For GPU acceleration:** NVIDIA GPU with drivers + [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
-
-### Quick Start (CPU Mode)
-
-```bash
-# 1) Clone
-git clone https://github.com/RTR95/stockIt_by_RTR.git
-cd stockIt_by_RTR
-
-# 2) Build + start the app container (CPU mode)
-docker-compose up -d --build
-
-# 3) Build local DB from bundled historic data (stocks + indices)
-docker-compose exec stocron-by-rtr python 2-download_all_stocks.py --build-db-only
-
-# 4) Download missing live symbols (recommended)
-docker-compose exec stocron-by-rtr python 2-download_all_stocks.py
-
-# 5) Delisted stocks (recommended for survivorship bias)
-docker-compose exec stocron-by-rtr python scripts/download_delisted_stocks.py --export
-docker-compose exec stocron-by-rtr python scripts/download_delisted_stocks.py --download --years 30
-docker-compose exec stocron-by-rtr python 2-download_all_stocks.py --build-db-only
-
-# 6) (Optional) Enable real crude oil data
-export FRED_API_KEY="your_fred_api_key"
-
-# 7) Download ML models (optional; required for ML forecaster/explainer)
-docker-compose exec stocron-by-rtr python 3-download_models.py
-
-# 8) Train classifier (required for ML signals)
-docker-compose exec stocron-by-rtr python 4-train_classifier.py
-```
-
-Open👉 http://localhost:8501
-
-> **Note:** Source code and models are mounted, so changes persist and reflect immediately without rebuilding.
 
 ---
 
-## GPU Acceleration Setup 🎮
+### 🚀 Option A: GPU Mode (NVIDIA - Recommended)
 
-ML models (Chronos, Qwen) run **10-50x faster** on GPU. We provide a pre-configured GPU Docker image.
+**10-50x faster ML inference.** Supports RTX 20/30/40/50 series including Blackwell (RTX 5070/5080/5090).
 
-### Option 1: GPU Mode (NVIDIA - Recommended)
+#### Prerequisites
+1. NVIDIA GPU with latest drivers (`nvidia-smi` should work)
+2. [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) installed
+
+#### Copy-Paste Commands (GPU)
 
 ```bash
-# Prerequisites: Install NVIDIA Container Toolkit first
-# https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
+# Step 1: Clone the repository
+git clone https://github.com/RTR95/stockIt_by_RTR.git
+cd stockIt_by_RTR
 
-# Verify your GPU is detected
-nvidia-smi
-
-# Start with GPU support (uses Dockerfile.gpu with CUDA + cuDNN)
+# Step 2: Build and start GPU container (first build takes ~15-20 mins)
 docker-compose --profile gpu up -d --build
 
-# The GPU container is named 'stocron-by-rtr-gpu'
+# Step 3: Build local database from bundled data
+docker-compose exec stocron-by-rtr-gpu python 2-download_all_stocks.py --build-db-only
+
+# Step 4: Download live stock data (optional but recommended)
+docker-compose exec stocron-by-rtr-gpu python 2-download_all_stocks.py
+
+# Step 5: Download ML models (choose option 2 for balanced setup)
 docker-compose exec stocron-by-rtr-gpu python 3-download_models.py
 
-# Run GPU diagnostics
-docker-compose exec stocron-by-rtr-gpu python 3-download_models.py --diagnose
+# Step 6: Train the classifier
+docker-compose exec stocron-by-rtr-gpu python 4-train_classifier.py
 
-# Verify GPU is working
-docker-compose exec stocron-by-rtr-gpu python -c "
-import torch
-print('CUDA available:', torch.cuda.is_available())
-if torch.cuda.is_available():
-    print('GPU:', torch.cuda.get_device_name(0))
-    print('VRAM:', round(torch.cuda.get_device_properties(0).total_memory / 1e9, 1), 'GB')
-"
+# Step 7: Verify GPU is working
+docker-compose exec stocron-by-rtr-gpu python -c "import torch; print('GPU:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'Not detected')"
 ```
 
-### Option 2: CPU Mode (Default)
+**Open the app:** http://localhost:8501
+
+---
+
+### 💻 Option B: CPU Mode (No GPU Required)
+
+Works on any machine. ML inference will be slower but fully functional.
+
+#### Prerequisites
+1. Docker Desktop installed and running
+
+#### Copy-Paste Commands (CPU)
 
 ```bash
-# Standard CPU-only mode
-docker-compose up -d --build
+# Step 1: Clone the repository
+git clone https://github.com/RTR95/stockIt_by_RTR.git
+cd stockIt_by_RTR
 
-# All commands use 'stocron-by-rtr' container
+# Step 2: Build and start CPU container
+docker-compose --profile cpu up -d --build
+
+# Step 3: Build local database from bundled data
+docker-compose exec stocron-by-rtr python 2-download_all_stocks.py --build-db-only
+
+# Step 4: Download live stock data (optional but recommended)
+docker-compose exec stocron-by-rtr python 2-download_all_stocks.py
+
+# Step 5: Download ML models (choose option 3 for lite setup on CPU)
 docker-compose exec stocron-by-rtr python 3-download_models.py
+
+# Step 6: Train the classifier
+docker-compose exec stocron-by-rtr python 4-train_classifier.py
 ```
 
-### Switching Between Modes
+**Open the app:** http://localhost:8501
+
+---
+
+### 🔄 Switching Between GPU and CPU Modes
 
 ```bash
-# Stop current containers
-docker-compose down
+# Stop current container first
+docker-compose --profile gpu down    # if running GPU mode
+docker-compose --profile cpu down    # if running CPU mode
 
-# Start CPU mode
-docker-compose up -d --build
-
-# OR start GPU mode
-docker-compose --profile gpu up -d --build
+# Then start the other mode
+docker-compose --profile gpu up -d   # switch to GPU
+docker-compose --profile cpu up -d   # switch to CPU
 ```
 
-### Other Hardware Options
+---
 
-<details>
-<summary><b>Apple Silicon (M1/M2/M3/M4)</b></summary>
+### 📥 Optional: Download Delisted Stocks (for Survivorship Bias Analysis)
 
-Apple Silicon uses Metal Performance Shaders (MPS). Run natively (not in Docker) for best performance:
+```bash
+# GPU mode
+docker-compose exec stocron-by-rtr-gpu python scripts/download_delisted_stocks.py --export
+docker-compose exec stocron-by-rtr-gpu python scripts/download_delisted_stocks.py --download --years 30
+docker-compose exec stocron-by-rtr-gpu python 2-download_all_stocks.py --build-db-only
+
+# CPU mode (replace container name)
+docker-compose exec stocron-by-rtr python scripts/download_delisted_stocks.py --export
+docker-compose exec stocron-by-rtr python scripts/download_delisted_stocks.py --download --years 30
+docker-compose exec stocron-by-rtr python 2-download_all_stocks.py --build-db-only
+```
+
+---
+
+### 🍎 Apple Silicon (M1/M2/M3/M4)
+
+Apple Silicon uses Metal Performance Shaders (MPS). Run natively (not in Docker) for best GPU performance:
 
 ```bash
 # Install dependencies
 pip install -r requirements.txt
 
-# Install PyTorch (MPS enabled by default)
-pip install torch torchvision
-
 # Enable Metal for Qwen LLM
 pip uninstall llama-cpp-python -y
 CMAKE_ARGS="-DLLAMA_METAL=on" pip install llama-cpp-python --no-cache-dir
 
-# Verify
-python -c "import torch; print('MPS available:', torch.backends.mps.is_available())"
+# Run the app
+streamlit run app.py
 ```
 
-</details>
+---
 
-<details>
-<summary><b>AMD/Intel GPU (Windows - DirectML)</b></summary>
-
-```bash
-pip install torch-directml
-```
-
-> **Note:** DirectML works for PyTorch models but llama-cpp-python may still use CPU.
-
-</details>
-
-<details>
-<summary><b>Intel NPU (Neural Processing Unit)</b></summary>
-
-```bash
-pip install openvino optimum[openvino]
-```
-
-> **Note:** NPU support is experimental.
-
-</details>
-
-### Troubleshooting GPU Issues
+### ❓ Troubleshooting
 
 | Issue | Solution |
 |-------|----------|
-| `CUDA not available` in GPU container | Ensure NVIDIA Container Toolkit is installed and restart Docker |
-| `GPU: Not detected` | Use `--profile gpu` flag: `docker-compose --profile gpu up -d --build` |
-| `Out of memory` | Use smaller model (chronos-t5-tiny) via option [3] in download script |
-| `nvidia-smi` not found | Install NVIDIA drivers from nvidia.com |
-| Container starts but no GPU | Check `nvidia-smi` works on host first |
+| `CUDA not available` | Install [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) and restart Docker |
+| `nvidia-smi` not found | Install NVIDIA drivers from [nvidia.com](https://nvidia.com) |
+| `Out of memory` | Use smaller model: choose option [3] LITE in `3-download_models.py` |
+| Port 8501 already in use | Stop other containers: `docker-compose --profile gpu down` or `docker-compose --profile cpu down` |
+| Feature mismatch error | Retrain classifier: `python 4-train_classifier.py` |
+| RTX 50-series not detected | The GPU image uses PyTorch nightly with CUDA 12.8 for Blackwell support. Rebuild: `docker-compose --profile gpu up -d --build` |
 
 ---
 
