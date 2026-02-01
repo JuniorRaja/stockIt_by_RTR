@@ -1,14 +1,13 @@
 services:
   # ============================================================
-  # CPU-only version
-  # Usage: docker-compose --profile cpu up -d --build
+  # CPU-only version (default - runs without any profile flag)
+  # Usage: docker-compose up -d --build
   # ============================================================
   stocron-by-rtr:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: stocron-by-rtr
-    profiles: ["cpu"]
     ports:
       - "8501:8501"
     volumes:

@@ -425,26 +425,14 @@ def print_summary(config):
         print("\n" + "-" * 60)
         print("🎮 GPU ACCELERATION SETUP")
         print("-" * 60)
-        gpu_name = system_info.get('gpu_name', 'NVIDIA GPU')
-        print(f"\n   Detected: {gpu_name}")
+        print(f"\n   Detected: {system_info.get('gpu_name', 'NVIDIA GPU')}")
         print(f"   VRAM: {system_info['gpu_vram_gb']:.1f} GB")
-        
-        # Check for Blackwell architecture (RTX 50-series)
-        is_blackwell = any(x in gpu_name.upper() for x in ['5070', '5080', '5090', '50 SERIES', 'BLACKWELL'])
-        
-        if is_blackwell:
-            print("\n   ⚠️  BLACKWELL GPU DETECTED (RTX 50-series)")
-            print("   Requires PyTorch NIGHTLY with CUDA 12.8 for sm_120 support")
-            print("\n   # For Chronos (PyTorch nightly with Blackwell support)")
-            print("   pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128")
-        else:
-            print("\n   To enable GPU for all models, run:")
-            print("\n   # For Chronos (automatic if PyTorch has CUDA)")
-            print("   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121")
-        
-        print("\n   # For Qwen LLM (requires recompilation with CUDA)")
+        print("\n   To enable GPU for all models, run:")
+        print("\n   # For Chronos (automatic if PyTorch has CUDA)")
+        print("   pip install torch --index-url https://download.pytorch.org/whl/cu121")
+        print("\n   # For Qwen LLM (requires recompilation)")
         print("   pip uninstall llama-cpp-python -y")
-        print("   CMAKE_ARGS=\"-DLLAMA_CUDA=on\" pip install llama-cpp-python --no-cache-dir --force-reinstall")
+        print("   CMAKE_ARGS=\"-DLLAMA_CUDA=on\" pip install llama-cpp-python --no-cache-dir")
         print("\n   💡 Tip: Run 'python -c \"from src.ml_models.base import print_device_diagnostics; print_device_diagnostics()\"'")
         print("      to verify GPU detection")
     elif system_info.get('gpu') == 'apple_silicon':
@@ -487,21 +475,10 @@ def run_gpu_diagnostics():
         best = info.get("best_device", "cpu")
         
         if best == "cuda":
-            # Check for Blackwell architecture
-            gpu_name = info.get("cuda", {}).get("name", "")
-            is_blackwell = any(x in gpu_name.upper() for x in ['5070', '5080', '5090', '50 SERIES', 'BLACKWELL'])
-            
-            if is_blackwell:
-                print("\n⚠️  BLACKWELL GPU (RTX 50-series) DETECTED!")
-                print(f"   GPU: {gpu_name}")
-                print("\n  Blackwell requires PyTorch NIGHTLY with CUDA 12.8:")
-                print("  pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128")
-            else:
-                print("\n✓ Your system is ready for GPU acceleration!")
-            
+            print("\n✓ Your system is ready for GPU acceleration!")
             print("\n  To ensure llama-cpp-python uses your GPU:")
             print("  pip uninstall llama-cpp-python -y")
-            print("  CMAKE_ARGS=\"-DLLAMA_CUDA=on\" pip install llama-cpp-python --no-cache-dir --force-reinstall")
+            print("  CMAKE_ARGS=\"-DLLAMA_CUDA=on\" pip install llama-cpp-python --no-cache-dir")
             
         elif best == "mps":
             print("\n✓ Apple Silicon detected!")
