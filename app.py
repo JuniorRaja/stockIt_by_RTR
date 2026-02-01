@@ -880,9 +880,9 @@ def main():
     with col3:
         suggest = st.button("💡 Suggest", use_container_width=True)
     with col4:
-        reset = st.button("🔄 Reset", use_container_width=True)
+        reset = st.button("🔄 Reset UI", use_container_width=True)
     with col5:
-        refresh = st.button("🔁 Refresh", use_container_width=True)
+        refresh = st.button("🔁 Refresh a Stock", use_container_width=True)
     
     # Handle reset
     if reset:
