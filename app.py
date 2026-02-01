@@ -395,6 +395,89 @@ def _render_howto_modal():
         _body()
 
 
+def _render_all_stocks_modal(app):
+    def _body():
+        col_title, col_close = st.columns([5, 1])
+        st.markdown("### Sectors")
+        stock_info_df = _load_stock_info_index()
+        if stock_info_df.empty:
+            st.warning("No local stock metadata found. Run `python 2-download_all_stocks.py` first.")
+            return
+        
+        stock_info_df = stock_info_df.copy()
+        stock_info_df["sector"] = stock_info_df["sector"].fillna("Unknown")
+        stock_info_df["current_price"] = pd.to_numeric(stock_info_df["current_price"], errors="coerce")
+        
+        # Sector filter buttons
+        sectors = sorted([s for s in stock_info_df["sector"].unique() if s])
+        sector_key = "all_stocks_sector"
+        if sector_key not in st.session_state:
+            st.session_state[sector_key] = "All sectors"
+        
+        buttons = ["All sectors"] + sectors
+        columns_per_row = 6
+        for row_start in range(0, len(buttons), columns_per_row):
+            row_buttons = buttons[row_start:row_start + columns_per_row]
+            cols = st.columns(columns_per_row)
+            for col, label in zip(cols, row_buttons):
+                is_selected = st.session_state.get(sector_key, "All sectors") == label
+                btn_type = "primary" if is_selected else "secondary"
+                if col.button(
+                    label,
+                    key=f"sector_btn_{label}",
+                    use_container_width=True,
+                    type=btn_type,
+                ):
+                    st.session_state[sector_key] = label
+                    st.rerun()
+            if len(row_buttons) < columns_per_row:
+                for col in cols[len(row_buttons):]:
+                    col.empty()
+        
+        selected_sector = st.session_state.get(sector_key, "All sectors")
+        if selected_sector != "All sectors":
+            stock_info_df = stock_info_df[stock_info_df["sector"] == selected_sector]
+        
+        display_df = stock_info_df[["symbol", "name", "sector", "current_price"]].copy()
+        display_df = display_df.sort_values("symbol")
+        display_df.rename(columns={
+            "symbol": "Symbol",
+            "name": "Name",
+            "sector": "Sector",
+            "current_price": "Current Price",
+        }, inplace=True)
+        display_df["Analyze"] = False
+        
+        edited = st.data_editor(
+            display_df,
+            hide_index=True,
+            num_rows="fixed",
+            use_container_width=True,
+            column_config={
+                "Analyze": st.column_config.CheckboxColumn(
+                    "Analyze",
+                    help="Select a stock to analyze",
+                    default=False,
+                ),
+            },
+            disabled=["Symbol", "Name", "Sector", "Current Price"],
+            key="all_stocks_editor",
+        )
+        
+        selected = edited[edited["Analyze"] == True]
+        if not selected.empty:
+            symbol = selected.iloc[0]["Symbol"]
+            st.session_state.selected_stock = symbol
+            st.session_state.analyze_stock = symbol
+            st.session_state.show_all_stocks = False
+            st.rerun()
+    
+    if _render_dialog("All Stocks", _body):
+        return
+    with st.expander("All Stocks", expanded=True):
+        _body()
+
+
 class IndianEquityIntelligence:
     def __init__(self):
         self.config = load_config()
@@ -727,6 +810,8 @@ def main():
         with col_howto:
             if st.button("How-to?", use_container_width=True):
                 st.session_state.show_howto = True
+        if st.button("View all Stocks", use_container_width=True):
+            st.session_state.show_all_stocks = True
 
         render_footer()
 
@@ -736,6 +821,8 @@ def main():
     if st.session_state.get("show_howto"):
         _render_howto_modal()
         st.session_state.show_howto = False
+    if st.session_state.get("show_all_stocks"):
+        _render_all_stocks_modal(app)
     
     st.title("Stock Analysis")
     
@@ -793,9 +880,9 @@ def main():
     with col3:
         suggest = st.button("💡 Suggest", use_container_width=True)
     with col4:
-        reset = st.button("🔄 Reset", use_container_width=True)
+        reset = st.button("🔄 Reset UI", use_container_width=True)
     with col5:
-        refresh = st.button("🔁 Refresh", use_container_width=True)
+        refresh = st.button("🔁 Refresh a Stock", use_container_width=True)
     
     # Handle reset
     if reset:
@@ -846,14 +933,21 @@ def main():
                 filtered_symbols = []
                 with st.spinner("Filtering candidates by CAGR and signal..."):
                     for s in candidate_symbols:
-                        data = app.fetch_data(s, show_spinner=False, show_errors=False)
-                        if not data:
-                            continue
-                        stock_cagr = _calculate_price_cagr(data.get("price_history"), holding_period)
+                        stock_cagr = app.data_manager.get_stock_cagr(s, holding_period)
+                        data = None
+                        if stock_cagr is None:
+                            data = app.fetch_data(s, show_spinner=False, show_errors=False)
+                            if not data:
+                                continue
+                            stock_cagr = _calculate_price_cagr(data.get("price_history"), holding_period)
                         if stock_cagr is None:
                             continue
                         if not (expected_cagr - cagr_tolerance <= stock_cagr <= expected_cagr + cagr_tolerance):
                             continue
+                        if data is None:
+                            data = app.fetch_data(s, show_spinner=False, show_errors=False)
+                            if not data:
+                                continue
                         results = app.run_analysis(s, profile, data, show_spinner=False, enable_ml=False)
                         if results['signal'].signal not in {Signal.BUY, Signal.HOLD}:
                             continue

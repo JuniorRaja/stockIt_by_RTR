@@ -55,6 +55,7 @@ MISSING_STOCK_LIST_FILE = DATA_DIR / 'stock_lists' / 'missing_live_symbols.json'
 
 # 30 years of data
 YEARS_OF_DATA = 30
+CAGR_WINDOWS_YEARS = [1, 3, 5, 10]
 
 
 def setup_directories():
@@ -766,9 +767,105 @@ def build_database():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_index_symbol ON index_history(index_symbol)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_index_date ON index_history(date)")
         
+        # Create CAGR cache table
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS asset_cagr (
+                asset_type VARCHAR,
+                symbol VARCHAR,
+                window_years INTEGER,
+                start_date DATE,
+                end_date DATE,
+                start_close DOUBLE,
+                end_close DOUBLE,
+                years_span DOUBLE,
+                cagr_pct DOUBLE,
+                updated_at TIMESTAMP,
+                PRIMARY KEY (asset_type, symbol, window_years)
+            )
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_asset_cagr_symbol ON asset_cagr(symbol)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_asset_cagr_type_window ON asset_cagr(asset_type, window_years)")
+        
+        # Build CAGR cache for stocks and indices
+        def _populate_cagr_cache(table_name: str, symbol_column: str, asset_type: str):
+            # Clear existing rows for asset type
+            conn.execute("DELETE FROM asset_cagr WHERE asset_type = ?", [asset_type])
+            
+            # Full-history CAGR (window_years = 0)
+            conn.execute(f"""
+                INSERT INTO asset_cagr
+                SELECT
+                    '{asset_type}' AS asset_type,
+                    {symbol_column} AS symbol,
+                    0 AS window_years,
+                    MIN(date) AS start_date,
+                    MAX(date) AS end_date,
+                    arg_min(close, date) AS start_close,
+                    arg_max(close, date) AS end_close,
+                    datediff('day', MIN(date), MAX(date)) / 365.25 AS years_span,
+                    CASE
+                        WHEN arg_min(close, date) > 0
+                             AND arg_max(close, date) > 0
+                             AND datediff('day', MIN(date), MAX(date)) > 0
+                        THEN (POWER(arg_max(close, date) / arg_min(close, date),
+                              1.0 / (datediff('day', MIN(date), MAX(date)) / 365.25)) - 1) * 100
+                        ELSE NULL
+                    END AS cagr_pct,
+                    CURRENT_TIMESTAMP AS updated_at
+                FROM {table_name}
+                GROUP BY {symbol_column}
+            """)
+            
+            # Rolling window CAGR
+            for window_years in CAGR_WINDOWS_YEARS:
+                window_days = int(window_years * 365)
+                conn.execute(f"""
+                    WITH last_dates AS (
+                        SELECT {symbol_column} AS symbol, MAX(date) AS end_date
+                        FROM {table_name}
+                        GROUP BY {symbol_column}
+                    ),
+                    windowed AS (
+                        SELECT t.{symbol_column} AS symbol,
+                               MIN(t.date) AS start_date,
+                               l.end_date AS end_date,
+                               arg_min(t.close, t.date) AS start_close,
+                               arg_max(t.close, t.date) AS end_close
+                        FROM {table_name} t
+                        JOIN last_dates l ON t.{symbol_column} = l.symbol
+                        WHERE t.date >= l.end_date - INTERVAL '{window_days} days'
+                        GROUP BY t.{symbol_column}, l.end_date
+                    )
+                    INSERT INTO asset_cagr
+                    SELECT
+                        '{asset_type}' AS asset_type,
+                        symbol,
+                        {window_years} AS window_years,
+                        start_date,
+                        end_date,
+                        start_close,
+                        end_close,
+                        datediff('day', start_date, end_date) / 365.25 AS years_span,
+                        CASE
+                            WHEN start_close > 0 AND end_close > 0
+                                 AND datediff('day', start_date, end_date) > 0
+                            THEN (POWER(end_close / start_close,
+                                  1.0 / (datediff('day', start_date, end_date) / 365.25)) - 1) * 100
+                            ELSE NULL
+                        END AS cagr_pct,
+                        CURRENT_TIMESTAMP AS updated_at
+                    FROM windowed
+                """)
+        
+        logger.info("Calculating CAGR cache for stocks...")
+        _populate_cagr_cache("price_history", "symbol", "stock")
+        logger.info("Calculating CAGR cache for indices...")
+        _populate_cagr_cache("index_history", "index_symbol", "index")
+        
         stock_count = conn.execute("SELECT COUNT(*) FROM stocks").fetchone()[0]
         price_count = conn.execute("SELECT COUNT(*) FROM price_history").fetchone()[0]
         index_count = conn.execute("SELECT COUNT(*) FROM index_history").fetchone()[0]
+        cagr_count = conn.execute("SELECT COUNT(*) FROM asset_cagr").fetchone()[0]
         
         # Get date range
         date_range = conn.execute("""
@@ -788,6 +885,7 @@ def build_database():
             logger.info(f"  Date range: {date_range[0]} to {date_range[1]}")
         if index_date_range[0] and index_date_range[1]:
             logger.info(f"  Index date range: {index_date_range[0]} to {index_date_range[1]}")
+        logger.info(f"  CAGR rows: {cagr_count:,}")
         logger.info(f"  Database: {db_path}")
         
     except Exception as e:

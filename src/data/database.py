@@ -49,6 +49,23 @@ class DatabaseManager:
             )
         """)
         self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS asset_cagr (
+                asset_type VARCHAR,
+                symbol VARCHAR,
+                window_years INTEGER,
+                start_date DATE,
+                end_date DATE,
+                start_close DOUBLE,
+                end_close DOUBLE,
+                years_span DOUBLE,
+                cagr_pct DOUBLE,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (asset_type, symbol, window_years)
+            )
+        """)
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_asset_cagr_symbol ON asset_cagr(symbol)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_asset_cagr_type_window ON asset_cagr(asset_type, window_years)")
+        self.conn.execute("""
             CREATE TABLE IF NOT EXISTS red_flags (
                 id INTEGER PRIMARY KEY, symbol VARCHAR, flag_type VARCHAR,
                 severity VARCHAR, description VARCHAR, detected_date DATE,
