@@ -236,24 +236,74 @@ class QwenExplainer(AnalysisExplainer):
             
             self._logger.info(f"Loading model from {gguf_file}")
             
-            # Determine GPU layers
-            n_gpu_layers = 0
-            if self.config.device == "cuda":
-                n_gpu_layers = -1  # All layers on GPU
-            elif self.config.device == "mps":
-                n_gpu_layers = -1  # All layers on Metal
+            # Determine device and GPU layers
+            device = self.config.device
+            if device == "auto":
+                device = self._detect_best_device()
             
-            # Load model
-            self._llm = Llama(
-                model_path=str(gguf_file),
-                n_ctx=self.config.context_length,
-                n_gpu_layers=n_gpu_layers,
-                verbose=False,
-            )
+            # Check if llama-cpp-python was compiled with GPU support
+            n_gpu_layers = 0
+            actual_device = "cpu"
+            
+            if device == "cuda":
+                # Check if CUDA backend is available in llama-cpp
+                try:
+                    import torch
+                    if torch.cuda.is_available():
+                        # Test if llama-cpp was compiled with CUDA
+                        # Try to load with GPU layers, will fail if not compiled with CUDA
+                        n_gpu_layers = -1  # All layers on GPU
+                        actual_device = "cuda"
+                        gpu_name = torch.cuda.get_device_name(0)
+                        self._logger.info(f"Attempting to load on CUDA GPU: {gpu_name}")
+                except Exception as e:
+                    self._logger.warning(f"CUDA not available for llama-cpp: {e}")
+                    
+            elif device == "mps":
+                # Check Metal support
+                try:
+                    import torch
+                    if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                        n_gpu_layers = -1  # All layers on Metal
+                        actual_device = "mps"
+                        self._logger.info("Using Apple Metal (MPS) for LLM")
+                except Exception as e:
+                    self._logger.warning(f"MPS not available for llama-cpp: {e}")
+            
+            # Log the configuration being used
+            self._logger.info(f"llama-cpp config: device={actual_device}, n_gpu_layers={n_gpu_layers}")
+            
+            # Load model with error handling for GPU failures
+            try:
+                self._llm = Llama(
+                    model_path=str(gguf_file),
+                    n_ctx=self.config.context_length,
+                    n_gpu_layers=n_gpu_layers,
+                    verbose=False,
+                )
+                self._actual_device = actual_device
+            except Exception as gpu_error:
+                if n_gpu_layers != 0:
+                    self._logger.warning(
+                        f"GPU loading failed ({gpu_error}), falling back to CPU. "
+                        "For GPU support, reinstall llama-cpp-python with CUDA: "
+                        "pip uninstall llama-cpp-python && "
+                        "CMAKE_ARGS='-DLLAMA_CUDA=on' pip install llama-cpp-python --no-cache-dir"
+                    )
+                    # Retry with CPU
+                    self._llm = Llama(
+                        model_path=str(gguf_file),
+                        n_ctx=self.config.context_length,
+                        n_gpu_layers=0,
+                        verbose=False,
+                    )
+                    self._actual_device = "cpu"
+                else:
+                    raise
             
             self._model = self._llm
             self._status = ModelStatus.READY
-            self._logger.info(f"Qwen model loaded successfully on {self.config.device}")
+            self._logger.info(f"Qwen model loaded successfully on {self._actual_device}")
             return True
             
         except Exception as e:

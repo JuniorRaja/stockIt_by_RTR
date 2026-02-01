@@ -32,6 +32,9 @@ This is not just a screener. It is a **Time Machine**. It allows you to validate
 We don't rely on a single model. Stocron uses a hybrid architecture:
 * **The Forecaster (Chronos-T5):** A Transformer-based model (pretrained by Amazon) that treats stock charts like a language to predict future price sequences.
 * **The Classifier (LightGBM):** A gradient-boosting decision engine that analyzes hundreds of features (Financials, Macro, Technicals) to generate a binary `BUY`/`HOLD` signal.
+* **The Explainer (Qwen2.5):** A local LLM that generates human-readable explanations for AI decisions.
+
+> **GPU Acceleration:** All models support NVIDIA CUDA, Apple Metal (MPS), and Intel OpenVINO for 10-50x faster inference.
 
 ### 2. Time Travel & Survivorship ⏳
 Most backtests are fake because they test on companies that exist *today*.
@@ -79,6 +82,14 @@ The system is containerized for stability and reproducibility.
     │ │ Chronos-T5     │ │
     │ ├────────────────┤ │
     │ │ LightGBM       │ │
+    │ ├────────────────┤ │
+    │ │ Qwen2.5 (LLM)  │ │
+    │ └────────────────┘ │
+    │   ▲                │
+    │   │ GPU/NPU        │
+    │   │ Acceleration   │
+    │ ┌─┴──────────────┐ │
+    │ │ CUDA/MPS/OpenVINO│
     │ └────────────────┘ │
     └────────────────────┘
 ```
@@ -89,14 +100,17 @@ The system is containerized for stability and reproducibility.
 > We strongly recommend running Stocron via Docker to avoid dependency hell.
 
 ### Prerequisites
-Docker Desktop installed and running.
+- Docker Desktop installed and running
+- **For GPU acceleration:** NVIDIA GPU with drivers + [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
+
+### Quick Start (CPU Mode)
 
 ```bash
 # 1) Clone
 git clone https://github.com/RTR95/stockIt_by_RTR.git
 cd stockIt_by_RTR
 
-# 2) Build + start the app container
+# 2) Build + start the app container (CPU mode)
 docker-compose up -d --build
 
 # 3) Build local DB from bundled historic data (stocks + indices)
@@ -118,12 +132,125 @@ docker-compose exec stocron-by-rtr python 3-download_models.py
 
 # 8) Train classifier (required for ML signals)
 docker-compose exec stocron-by-rtr python 4-train_classifier.py
+```
 
 Open👉 http://localhost:8501
 
-Note: The container mounts `./models` and `./config` so downloaded models and
-auto-updated settings persist on the host.
+> **Note:** Source code and models are mounted, so changes persist and reflect immediately without rebuilding.
+
+---
+
+## GPU Acceleration Setup 🎮
+
+ML models (Chronos, Qwen) run **10-50x faster** on GPU. We provide a pre-configured GPU Docker image.
+
+### Option 1: GPU Mode (NVIDIA - Recommended)
+
+```bash
+# Prerequisites: Install NVIDIA Container Toolkit first
+# https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
+
+# Verify your GPU is detected
+nvidia-smi
+
+# Start with GPU support (uses Dockerfile.gpu with CUDA + cuDNN)
+docker-compose --profile gpu up -d --build
+
+# The GPU container is named 'stocron-by-rtr-gpu'
+docker-compose exec stocron-by-rtr-gpu python 3-download_models.py
+
+# Run GPU diagnostics
+docker-compose exec stocron-by-rtr-gpu python 3-download_models.py --diagnose
+
+# Verify GPU is working
+docker-compose exec stocron-by-rtr-gpu python -c "
+import torch
+print('CUDA available:', torch.cuda.is_available())
+if torch.cuda.is_available():
+    print('GPU:', torch.cuda.get_device_name(0))
+    print('VRAM:', round(torch.cuda.get_device_properties(0).total_memory / 1e9, 1), 'GB')
+"
 ```
+
+### Option 2: CPU Mode (Default)
+
+```bash
+# Standard CPU-only mode
+docker-compose up -d --build
+
+# All commands use 'stocron-by-rtr' container
+docker-compose exec stocron-by-rtr python 3-download_models.py
+```
+
+### Switching Between Modes
+
+```bash
+# Stop current containers
+docker-compose down
+
+# Start CPU mode
+docker-compose up -d --build
+
+# OR start GPU mode
+docker-compose --profile gpu up -d --build
+```
+
+### Other Hardware Options
+
+<details>
+<summary><b>Apple Silicon (M1/M2/M3/M4)</b></summary>
+
+Apple Silicon uses Metal Performance Shaders (MPS). Run natively (not in Docker) for best performance:
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Install PyTorch (MPS enabled by default)
+pip install torch torchvision
+
+# Enable Metal for Qwen LLM
+pip uninstall llama-cpp-python -y
+CMAKE_ARGS="-DLLAMA_METAL=on" pip install llama-cpp-python --no-cache-dir
+
+# Verify
+python -c "import torch; print('MPS available:', torch.backends.mps.is_available())"
+```
+
+</details>
+
+<details>
+<summary><b>AMD/Intel GPU (Windows - DirectML)</b></summary>
+
+```bash
+pip install torch-directml
+```
+
+> **Note:** DirectML works for PyTorch models but llama-cpp-python may still use CPU.
+
+</details>
+
+<details>
+<summary><b>Intel NPU (Neural Processing Unit)</b></summary>
+
+```bash
+pip install openvino optimum[openvino]
+```
+
+> **Note:** NPU support is experimental.
+
+</details>
+
+### Troubleshooting GPU Issues
+
+| Issue | Solution |
+|-------|----------|
+| `CUDA not available` in GPU container | Ensure NVIDIA Container Toolkit is installed and restart Docker |
+| `GPU: Not detected` | Use `--profile gpu` flag: `docker-compose --profile gpu up -d --build` |
+| `Out of memory` | Use smaller model (chronos-t5-tiny) via option [3] in download script |
+| `nvidia-smi` not found | Install NVIDIA drivers from nvidia.com |
+| Container starts but no GPU | Check `nvidia-smi` works on host first |
+
 ---
 
 ## ML Logic & Explainability 🧩
