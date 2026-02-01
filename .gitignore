@@ -21,6 +21,7 @@ env/
 .vscode/
 *.swp
 *~
+.vs/
 
 # Data files (generated locally)
 data/cache/
