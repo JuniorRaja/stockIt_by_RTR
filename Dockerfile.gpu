@@ -39,12 +39,8 @@ RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel
 # Copy requirements first (for better caching)
 COPY requirements.txt .
 
-# Remove conflicting system packages before pip install
-RUN apt-get remove -y python3-blinker || true && \
-    rm -rf /usr/lib/python3/dist-packages/blinker* || true
-
-# Install Python dependencies (ignore pre-installed system packages)
-RUN pip install --no-cache-dir --ignore-installed -r requirements.txt && \
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir streamlit
 
 # Install PyTorch with CUDA support
