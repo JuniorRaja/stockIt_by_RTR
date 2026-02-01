@@ -277,6 +277,23 @@ class LocalDataSource:
 
         return None
     
+    def get_asset_cagr(self, symbol: str, window_years: int, asset_type: str = "stock") -> Optional[float]:
+        """Get cached CAGR for a stock or index from the local DB."""
+        db = self._get_db()
+        if not db:
+            return None
+        try:
+            row = db.execute("""
+                SELECT cagr_pct
+                FROM asset_cagr
+                WHERE asset_type = ? AND symbol = ? AND window_years = ?
+            """, [asset_type, symbol.upper(), int(window_years)]).fetchone()
+            if row:
+                return row[0]
+        except Exception as e:
+            logger.debug(f"Error querying CAGR for {symbol}: {e}")
+        return None
+    
     def get_all_symbols(self) -> List[str]:
         """Get all available symbols from local storage."""
         symbols = set()
@@ -640,6 +657,14 @@ class DataSourceManager:
         if df is not None and not df.empty:
             return df
         return None
+    
+    def get_stock_cagr(self, symbol: str, window_years: int) -> Optional[float]:
+        """Get cached stock CAGR from local DB (if available)."""
+        return self.local.get_asset_cagr(symbol, window_years, asset_type="stock")
+    
+    def get_index_cagr(self, index_symbol: str, window_years: int) -> Optional[float]:
+        """Get cached index CAGR from local DB (if available)."""
+        return self.local.get_asset_cagr(index_symbol, window_years, asset_type="index")
     
     def get_financials(self, symbol: str) -> Dict[str, pd.DataFrame]:
         """Get financial statements."""
