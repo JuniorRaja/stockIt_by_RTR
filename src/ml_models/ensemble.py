@@ -344,7 +344,7 @@ class MLEnsemble:
         explainer_result = None
         
         # Step 1: Run forecaster
-        if self._forecaster and self._forecaster.is_ready:
+        if self._forecaster:
             try:
                 forecast_result = self._forecaster.forecast(
                     price_series,

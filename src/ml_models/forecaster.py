@@ -103,6 +103,28 @@ class ChronosForecaster(TimeSeriesForecaster):
     def __init__(self, config: ModelConfig):
         super().__init__(config)
         self._pipeline = None
+
+    def _resolve_device_and_dtype(self) -> Tuple[str, "torch.dtype"]:
+        """Resolve best device and safe dtype for Chronos."""
+        import torch
+
+        device = self.config.device
+        if device == "auto":
+            device = self._detect_best_device()
+
+        if device == "cuda" and not torch.cuda.is_available():
+            device = "cpu"
+
+        if device == "cuda":
+            supports_bf16 = (
+                hasattr(torch.cuda, "is_bf16_supported")
+                and torch.cuda.is_bf16_supported()
+            )
+            dtype = torch.bfloat16 if supports_bf16 else torch.float16
+        else:
+            dtype = torch.float32
+
+        return device, dtype
     
     def load_model(self) -> bool:
         """Load Chronos model into memory."""
@@ -132,25 +154,33 @@ class ChronosForecaster(TimeSeriesForecaster):
             
             import torch
             
-            # Determine device
-            device = self.config.device
-            if device == "auto":
-                device = self._detect_best_device()
-            
-            # Set dtype based on device
-            if device == "cuda":
-                dtype = torch.bfloat16
-            else:
-                dtype = torch.float32
+            # Determine device and dtype
+            device, dtype = self._resolve_device_and_dtype()
             
             self._logger.info(f"Loading Chronos model from {model_id} on {device}")
             
-            self._pipeline = ChronosPipeline.from_pretrained(
-                model_id,
-                device_map=device,
-                dtype=dtype,  # Updated from torch_dtype (deprecated)
-            )
+            try:
+                self._pipeline = ChronosPipeline.from_pretrained(
+                    model_id,
+                    device_map=device,
+                    dtype=dtype,  # Updated from torch_dtype (deprecated)
+                )
+            except Exception as load_error:
+                if device == "cuda":
+                    self._logger.warning(
+                        f"Chronos CUDA load failed ({load_error}); falling back to CPU."
+                    )
+                    device = "cpu"
+                    dtype = torch.float32
+                    self._pipeline = ChronosPipeline.from_pretrained(
+                        model_id,
+                        device_map=device,
+                        dtype=dtype,
+                    )
+                else:
+                    raise
             
+            self.config.device = device
             self._model = self._pipeline
             self._status = ModelStatus.READY
             self._logger.info("Chronos model loaded successfully")
