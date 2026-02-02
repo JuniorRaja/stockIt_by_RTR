@@ -17,6 +17,7 @@ import time
 import json
 
 from ..utils.config import get_config
+from ..utils.cache_utils import LRUCache
 from .historic import (
     list_historic_stock_symbols,
     list_historic_index_names,
@@ -41,7 +42,10 @@ class LocalDataSource:
     
     def __init__(self):
         self._db_conn = None
-        self._stock_info_cache = {}
+        cache_config = get_config('cache', {}) or {}
+        memory_cache = cache_config.get('memory', {}) or {}
+        info_limit = memory_cache.get('stock_info_max_entries', 2048)
+        self._stock_info_cache = LRUCache(info_limit)
         survivorship = get_config('survivorship_bias', {}) or {}
         self._include_delisted = survivorship.get('include_delisted', False)
         delisted_dir = survivorship.get('delisted_data_dir', 'data/delisted')
@@ -82,7 +86,7 @@ class LocalDataSource:
         """Get stock info from local storage."""
         # Check cache
         if symbol in self._stock_info_cache:
-            return self._stock_info_cache[symbol]
+            return self._stock_info_cache.get(symbol)
         
         # Try JSON file first
         info_file = INFO_DIR / f"{symbol}.json"
@@ -112,7 +116,7 @@ class LocalDataSource:
                         'beta': info.get('beta'),
                         'source': 'local_file'
                     }
-                    self._stock_info_cache[symbol] = result
+                    self._stock_info_cache.set(symbol, result)
                     return result
             except Exception as e:
                 logger.debug(f"Error reading info file for {symbol}: {e}")
@@ -142,7 +146,7 @@ class LocalDataSource:
                         'delisted': True,
                         'source': 'delisted_file'
                     }
-                    self._stock_info_cache[symbol] = result
+                    self._stock_info_cache.set(symbol, result)
                     return result
             except Exception as e:
                 logger.debug(f"Error reading delisted info file for {symbol}: {e}")
@@ -171,7 +175,7 @@ class LocalDataSource:
                         'fifty_two_week_low': row[10],
                         'source': 'local_db'
                     }
-                    self._stock_info_cache[symbol] = result
+                    self._stock_info_cache.set(symbol, result)
                     return result
             except Exception as e:
                 logger.debug(f"Error querying database for {symbol}: {e}")
@@ -557,10 +561,13 @@ class DataSourceManager:
         self.yahoo = YahooFinanceSource()
         self.jugaad = JugaadDataSource()
         self.nse_tools = NSEToolsSource()
-        
-        self._info_cache: Dict[str, Dict[str, Any]] = {}
-        self._price_cache: Dict[str, pd.DataFrame] = {}
-        self._price_cache_years: Dict[str, int] = {}
+
+        cache_config = get_config('cache', {}) or {}
+        memory_cache = cache_config.get('memory', {}) or {}
+        info_limit = memory_cache.get('stock_info_max_entries', 2048)
+        price_limit = memory_cache.get('price_history_max_entries', 128)
+        self._info_cache = LRUCache(info_limit)
+        self._price_cache = LRUCache(price_limit)
         self._stock_list: Optional[pd.DataFrame] = None
         
         # Check if local data exists
@@ -603,7 +610,7 @@ class DataSourceManager:
         cache_key = symbol.upper()
         
         if use_cache and cache_key in self._info_cache:
-            return self._info_cache[cache_key]
+            return self._info_cache.get(cache_key)
         
         # Try local first
         info = self.local.get_stock_info(symbol)
@@ -615,7 +622,7 @@ class DataSourceManager:
                 info = self.nse_tools.get_stock_info(symbol)
         
         if info:
-            self._info_cache[cache_key] = info
+            self._info_cache.set(cache_key, info)
             logger.info(f"Got info for {symbol} from {info.get('source', 'unknown')}")
         
         return info
@@ -626,10 +633,11 @@ class DataSourceManager:
         cache_key = symbol.upper()
         
         if use_cache and cache_key in self._price_cache:
-            cached = self._price_cache[cache_key]
-            cached_years = self._price_cache_years.get(cache_key, 0)
-            if cached is not None and not cached.empty and cached_years >= years:
-                return self._filter_price_history(cached, years)
+            cached_entry = self._price_cache.get(cache_key)
+            if cached_entry:
+                cached, cached_years = cached_entry
+                if cached is not None and not cached.empty and cached_years >= years:
+                    return self._filter_price_history(cached, years)
         
         # Try local first
         logger.info(f"Fetching price history for {symbol}...")
@@ -644,8 +652,7 @@ class DataSourceManager:
                 df = self.jugaad.get_price_history(symbol, years)
         
         if df is not None and not df.empty:
-            self._price_cache[cache_key] = df
-            self._price_cache_years[cache_key] = years
+            self._price_cache.set(cache_key, (df, years))
             return self._filter_price_history(df, years)
         
         logger.warning(f"No price history found for {symbol}")
@@ -748,12 +755,10 @@ class DataSourceManager:
         # Clear caches
         cache_key = symbol.upper()
         if cache_key in self._info_cache:
-            del self._info_cache[cache_key]
+            self._info_cache.delete(cache_key)
         
         if cache_key in self._price_cache:
-            del self._price_cache[cache_key]
-        if cache_key in self._price_cache_years:
-            del self._price_cache_years[cache_key]
+            self._price_cache.delete(cache_key)
         
         # Refresh local files from Yahoo Finance (gap fill)
         try:
@@ -779,7 +784,6 @@ class DataSourceManager:
         """Clear all caches."""
         self._info_cache.clear()
         self._price_cache.clear()
-        self._price_cache_years.clear()
 
     def _filter_price_history(self, df: pd.DataFrame, years: int) -> pd.DataFrame:
         """Filter cached price history to the requested window."""
