@@ -180,6 +180,8 @@ class LocalDataSource:
     
     def get_price_history(self, symbol: str, years: int = 10) -> Optional[pd.DataFrame]:
         """Get price history from local storage."""
+        cutoff = datetime.now() - timedelta(days=years * 365)
+        cutoff_date = cutoff.date()
         # Try parquet file first
         price_file = PRICE_DIR / f"{symbol}.parquet"
         if price_file.exists():
@@ -188,7 +190,6 @@ class LocalDataSource:
                 df['date'] = pd.to_datetime(df['date'])
                 
                 # Filter to requested years
-                cutoff = datetime.now() - timedelta(days=years * 365)
                 df = df[df['date'] >= cutoff]
                 
                 if not df.empty:
@@ -201,13 +202,12 @@ class LocalDataSource:
         db = self._get_db()
         if db:
             try:
-                cutoff = datetime.now() - timedelta(days=years * 365)
                 df = db.execute("""
                     SELECT symbol, date, open, high, low, close, volume, source
                     FROM price_history 
                     WHERE symbol = ? AND date >= ?
                     ORDER BY date
-                """, [symbol, cutoff.date()]).fetchdf()
+                """, [symbol, cutoff_date]).fetchdf()
                 
                 if not df.empty:
                     df['date'] = pd.to_datetime(df['date'])
@@ -228,7 +228,6 @@ class LocalDataSource:
                     df['date'] = pd.to_datetime(df['date'])
                 else:
                     df['date'] = pd.to_datetime(df.iloc[:, 0])
-                cutoff = datetime.now() - timedelta(days=years * 365)
                 df = df[df['date'] >= cutoff]
                 if not df.empty:
                     logger.info(f"Got {len(df)} delisted records for {symbol}")
@@ -242,7 +241,6 @@ class LocalDataSource:
             historic_df = load_historic_index_prices(symbol)
 
         if historic_df is not None and not historic_df.empty:
-            cutoff = datetime.now() - timedelta(days=years * 365)
             historic_df = historic_df[historic_df["date"] >= cutoff]
             if not historic_df.empty:
                 logger.info(f"Got {len(historic_df)} historic records for {symbol}")
