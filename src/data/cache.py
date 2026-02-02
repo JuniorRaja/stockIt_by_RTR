@@ -8,6 +8,8 @@ import hashlib
 import json
 import logging
 
+from ..utils.config import get_config
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,12 +23,18 @@ class CacheManager:
         self.financials_dir = self.cache_dir / "financials"
         self.analysis_dir = self.cache_dir / "analysis"
         self.metadata_dir = self.cache_dir / "metadata"
+
+        cache_config = get_config('cache', {}) or {}
+        parquet_config = cache_config.get('parquet', {}) or {}
+        self._max_age_hours = parquet_config.get('max_age_hours', 24)
+        self._max_total_size_mb = parquet_config.get('max_total_size_mb', 1024)
         
         for dir_path in [self.price_dir, self.financials_dir, self.analysis_dir, self.metadata_dir]:
             dir_path.mkdir(exist_ok=True)
         
         self._cache_metadata: Dict[str, Dict] = {}
         self._load_metadata()
+        self._prune_cache()
     
     def _load_metadata(self):
         metadata_file = self.metadata_dir / "cache_index.json"
@@ -45,12 +53,15 @@ class CacheManager:
         except Exception as e:
             logger.warning(f"Failed to save cache metadata: {e}")
     
-    def _is_cache_valid(self, cache_key: str, max_age_hours: int = 24) -> bool:
+    def _is_cache_valid(self, cache_key: str, max_age_hours: Optional[int] = None) -> bool:
         if cache_key not in self._cache_metadata:
+            return False
+        max_age = self._max_age_hours if max_age_hours is None else max_age_hours
+        if max_age is not None and max_age <= 0:
             return False
         metadata = self._cache_metadata[cache_key]
         cached_time = datetime.fromisoformat(metadata.get('timestamp', '2000-01-01'))
-        return datetime.now() - cached_time < timedelta(hours=max_age_hours)
+        return datetime.now() - cached_time < timedelta(hours=max_age)
     
     def cache_price_history(self, symbol: str, df: pd.DataFrame):
         if df.empty:
@@ -64,7 +75,7 @@ class CacheManager:
         except Exception as e:
             logger.error(f"Failed to cache prices for {symbol}: {e}")
     
-    def get_cached_price_history(self, symbol: str, max_age_hours: int = 24) -> Optional[pd.DataFrame]:
+    def get_cached_price_history(self, symbol: str, max_age_hours: Optional[int] = None) -> Optional[pd.DataFrame]:
         cache_key = f"{symbol.upper()}_prices"
         if not self._is_cache_valid(cache_key, max_age_hours):
             return None
@@ -114,3 +125,51 @@ class CacheManager:
             self._cache_metadata = {}
         self._save_metadata()
         logger.info(f"Cleared cache: {data_type or 'all'}")
+
+    def _prune_cache(self):
+        """Remove expired cache entries and enforce size limits."""
+        now = datetime.now()
+        if self._max_age_hours is not None and self._max_age_hours > 0:
+            for cache_key, metadata in list(self._cache_metadata.items()):
+                timestamp = metadata.get('timestamp')
+                if not timestamp:
+                    continue
+                try:
+                    cached_time = datetime.fromisoformat(timestamp)
+                except Exception:
+                    continue
+                if now - cached_time > timedelta(hours=self._max_age_hours):
+                    symbol = cache_key.replace("_prices", "")
+                    file_path = self.price_dir / f"{symbol}.parquet"
+                    if file_path.exists():
+                        try:
+                            file_path.unlink()
+                        except Exception:
+                            pass
+                    self._cache_metadata.pop(cache_key, None)
+            self._save_metadata()
+
+        if self._max_total_size_mb is None or self._max_total_size_mb <= 0:
+            return
+        max_bytes = self._max_total_size_mb * 1024 * 1024
+        files = [
+            f for d in [self.price_dir, self.financials_dir, self.analysis_dir]
+            for f in d.rglob("*") if f.is_file()
+        ]
+        total_size = sum(f.stat().st_size for f in files)
+        if total_size <= max_bytes:
+            return
+        files.sort(key=lambda f: f.stat().st_mtime)
+        for f in files:
+            file_size = f.stat().st_size
+            try:
+                f.unlink()
+            except Exception:
+                continue
+            total_size -= file_size
+            if f.parent == self.price_dir:
+                symbol = f.stem.upper()
+                self._cache_metadata.pop(f"{symbol}_prices", None)
+            if total_size <= max_bytes:
+                break
+        self._save_metadata()

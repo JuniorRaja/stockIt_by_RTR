@@ -17,6 +17,9 @@ from typing import Dict, Any, Optional, Tuple
 import pandas as pd
 import numpy as np
 
+from ..utils.config import get_config
+from ..utils.cache_utils import LRUCache
+
 logger = logging.getLogger(__name__)
 
 # Data directories
@@ -62,7 +65,10 @@ class MacroDataProvider:
         """Initialize macro data provider."""
         self.cache_dir = cache_dir or MACRO_DIR
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        self._cache: Dict[str, pd.DataFrame] = {}
+        cache_config = get_config('cache', {}) or {}
+        memory_cache = cache_config.get('memory', {}) or {}
+        macro_limit = memory_cache.get('macro_max_entries', 16)
+        self._cache = LRUCache(macro_limit)
         self._fred_api = None
         
     def _get_fred_api(self):
@@ -109,7 +115,7 @@ class MacroDataProvider:
         """
         cache_key = f'repo_rate_{years}y'
         if cache_key in self._cache:
-            return self._cache[cache_key]
+            return self._cache.get(cache_key)
         
         # Try loading from cache file
         cache_file = self.cache_dir / f'repo_rate_{years}y.parquet'
@@ -117,7 +123,7 @@ class MacroDataProvider:
             try:
                 df = pd.read_parquet(cache_file)
                 df.index = pd.to_datetime(df.index)
-                self._cache[cache_key] = df
+                self._cache.set(cache_key, df)
                 return df
             except Exception as e:
                 logger.debug(f"Could not load cached repo rate: {e}")
@@ -152,7 +158,7 @@ class MacroDataProvider:
         except Exception:
             pass
         
-        self._cache[cache_key] = df
+        self._cache.set(cache_key, df)
         return df
     
     def get_usdinr_history(self, years: int = 30) -> pd.DataFrame:
@@ -167,7 +173,7 @@ class MacroDataProvider:
         """
         cache_key = f'usdinr_{years}y'
         if cache_key in self._cache:
-            return self._cache[cache_key]
+            return self._cache.get(cache_key)
         
         # Try loading from cache
         cache_file = self.cache_dir / f'usdinr_{years}y.parquet'
@@ -175,7 +181,7 @@ class MacroDataProvider:
             try:
                 df = pd.read_parquet(cache_file)
                 df.index = pd.to_datetime(df.index)
-                self._cache[cache_key] = df
+                self._cache.set(cache_key, df)
                 return df
             except Exception:
                 pass
@@ -196,7 +202,7 @@ class MacroDataProvider:
                 except Exception:
                     pass
                 
-                self._cache[cache_key] = df
+                self._cache.set(cache_key, df)
                 return df
         except Exception as e:
             logger.debug(f"Could not fetch USD-INR from Yahoo: {e}")
@@ -219,7 +225,7 @@ class MacroDataProvider:
             rates.append(max(35, base_rate + noise))
         
         df = pd.DataFrame({'usdinr': rates}, index=dates)
-        self._cache[cache_key] = df
+        self._cache.set(cache_key, df)
         return df
     
     def get_crude_oil_history(self, years: int = 30) -> pd.DataFrame:
@@ -234,7 +240,7 @@ class MacroDataProvider:
         """
         cache_key = f'crude_oil_{years}y'
         if cache_key in self._cache:
-            return self._cache[cache_key]
+            return self._cache.get(cache_key)
         
         # Try loading from cache
         cache_file = self.cache_dir / f'crude_oil_{years}y.parquet'
@@ -242,7 +248,7 @@ class MacroDataProvider:
             try:
                 df = pd.read_parquet(cache_file)
                 df.index = pd.to_datetime(df.index)
-                self._cache[cache_key] = df
+                self._cache.set(cache_key, df)
                 return df
             except Exception:
                 pass
@@ -266,7 +272,7 @@ class MacroDataProvider:
                     except Exception:
                         pass
                     
-                    self._cache[cache_key] = df
+                    self._cache.set(cache_key, df)
                     return df
             except Exception as e:
                 logger.debug(f"Could not fetch crude oil from FRED: {e}")
@@ -287,7 +293,7 @@ class MacroDataProvider:
                 except Exception:
                     pass
                 
-                self._cache[cache_key] = df
+                self._cache.set(cache_key, df)
                 return df
         except Exception as e:
             logger.debug(f"Could not fetch crude oil from Yahoo: {e}")
@@ -306,7 +312,7 @@ class MacroDataProvider:
             prices.append(current_price)
         
         df = pd.DataFrame({'crude_oil': prices}, index=dates)
-        self._cache[cache_key] = df
+        self._cache.set(cache_key, df)
         return df
     
     def get_cpi_inflation(self, years: int = 30) -> pd.DataFrame:
@@ -321,7 +327,7 @@ class MacroDataProvider:
         """
         cache_key = f'cpi_{years}y'
         if cache_key in self._cache:
-            return self._cache[cache_key]
+            return self._cache.get(cache_key)
         
         # Build from historical data
         start_year = datetime.now().year - years
@@ -349,7 +355,7 @@ class MacroDataProvider:
         # Resample to daily for consistency
         df = df.resample('D').ffill()
         
-        self._cache[cache_key] = df
+        self._cache.set(cache_key, df)
         return df
     
     def get_cpi_index(self, years: int = 30, base_year: int = 2010) -> pd.DataFrame:
@@ -396,7 +402,7 @@ class MacroDataProvider:
         """
         cache_key = f'nifty_{years}y'
         if cache_key in self._cache:
-            return self._cache[cache_key]
+            return self._cache.get(cache_key)
         
         # Try Yahoo Finance
         try:
@@ -407,7 +413,7 @@ class MacroDataProvider:
             if not df.empty:
                 df = df[['Close']].rename(columns={'Close': 'close'})
                 df.index = pd.to_datetime(df.index).tz_localize(None)
-                self._cache[cache_key] = df
+                self._cache.set(cache_key, df)
                 return df
         except Exception as e:
             logger.debug(f"Could not fetch Nifty from Yahoo: {e}")

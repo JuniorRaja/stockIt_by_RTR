@@ -19,6 +19,14 @@ database:
   type: duckdb
   path: data/db/equity_intelligence.db
   cache_dir: data/cache
+cache:
+  memory:
+    stock_info_max_entries: 2048
+    price_history_max_entries: 128
+    macro_max_entries: 16
+  parquet:
+    max_age_hours: 24
+    max_total_size_mb: 1024
 thresholds:
   governance:
     min_years_listed: 5

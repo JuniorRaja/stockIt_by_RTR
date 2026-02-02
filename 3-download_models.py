@@ -367,7 +367,7 @@ def print_summary(config):
     print("\n🚀 Next steps:")
     print("   1. docker-compose exec stocron-by-rtr python 4-train_classifier.py")
     print("   2. Run the app: Open👉 http://localhost:8501")
-    print("   3. ML will auto-initialize when you start the app!")
+    print("   3. Enable ML from the app settings initialize models")
     print()
 
 

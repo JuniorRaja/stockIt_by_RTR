@@ -99,9 +99,6 @@ cd stockIt_by_RTR
 # 2) Build + start the app container
 docker-compose up -d --build
 
-#If you have a Nvidia GPU installed
-docker compose --profile gpu up --build
-
 # 3) Build local DB from bundled historic data (stocks + indices)
 docker-compose exec stocron-by-rtr python 2-download_all_stocks.py --build-db-only
 
