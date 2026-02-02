@@ -406,6 +406,46 @@ class YahooFinanceSource:
         
         return None
 
+    def get_price_history(self, symbol: str, years: int = 10) -> Optional[pd.DataFrame]:
+        """Get price history from Yahoo Finance."""
+        yf = self._get_yf()
+        if not yf:
+            return None
+        
+        for suffix in ['.NS', '.BO']:
+            try:
+                ticker = yf.Ticker(f"{symbol}{suffix}")
+                df = ticker.history(period=f"{years}y")
+                
+                if df.empty:
+                    df = ticker.history(period="max")
+                
+                if not df.empty:
+                    df = df.reset_index()
+                    df.columns = [c.lower().replace(' ', '_') for c in df.columns]
+                    
+                    if 'date' in df.columns:
+                        try:
+                            if hasattr(df['date'].dt, 'tz') and df['date'].dt.tz is not None:
+                                df['date'] = df['date'].dt.tz_localize(None)
+                        except Exception:
+                            pass
+                        df['date'] = pd.to_datetime(df['date'])
+                    
+                    df['symbol'] = symbol
+                    df['source'] = f'yahoo_finance{suffix}'
+                    
+                    required = ['date', 'open', 'high', 'low', 'close', 'volume', 'source']
+                    if all(c in df.columns for c in required):
+                        logger.info(f"Got {len(df)} Yahoo records for {symbol}")
+                        return df[required]
+                        
+            except Exception as e:
+                logger.debug(f"Yahoo price failed for {symbol}{suffix}: {e}")
+                continue
+        
+        return None
+
 
 class JugaadDataSource:
     """Jugaad Data source (optional online fallback)."""
@@ -461,46 +501,6 @@ class JugaadDataSource:
 
         logger.info(f"Got {len(df)} Jugaad records for {symbol}")
         return df[required].sort_values("date")
-    
-    def get_price_history(self, symbol: str, years: int = 10) -> Optional[pd.DataFrame]:
-        """Get price history from Yahoo Finance."""
-        yf = self._get_yf()
-        if not yf:
-            return None
-        
-        for suffix in ['.NS', '.BO']:
-            try:
-                ticker = yf.Ticker(f"{symbol}{suffix}")
-                df = ticker.history(period=f"{years}y")
-                
-                if df.empty:
-                    df = ticker.history(period="max")
-                
-                if not df.empty:
-                    df = df.reset_index()
-                    df.columns = [c.lower().replace(' ', '_') for c in df.columns]
-                    
-                    if 'date' in df.columns:
-                        try:
-                            if hasattr(df['date'].dt, 'tz') and df['date'].dt.tz is not None:
-                                df['date'] = df['date'].dt.tz_localize(None)
-                        except:
-                            pass
-                        df['date'] = pd.to_datetime(df['date'])
-                    
-                    df['symbol'] = symbol
-                    df['source'] = f'yahoo_finance{suffix}'
-                    
-                    required = ['date', 'open', 'high', 'low', 'close', 'volume', 'source']
-                    if all(c in df.columns for c in required):
-                        logger.info(f"Got {len(df)} Yahoo records for {symbol}")
-                        return df[required]
-                        
-            except Exception as e:
-                logger.debug(f"Yahoo price failed for {symbol}{suffix}: {e}")
-                continue
-        
-        return None
 
 
 class NSEToolsSource:
@@ -562,6 +562,7 @@ class DataSourceManager:
         
         self._info_cache: Dict[str, Dict[str, Any]] = {}
         self._price_cache: Dict[str, pd.DataFrame] = {}
+        self._price_cache_years: Dict[str, int] = {}
         self._stock_list: Optional[pd.DataFrame] = None
         
         # Check if local data exists
@@ -624,12 +625,13 @@ class DataSourceManager:
     def get_price_history(self, symbol: str, years: int = 10, 
                           use_cache: bool = True) -> Optional[pd.DataFrame]:
         """Get price history - local first, then online."""
-        cache_key = f"{symbol.upper()}_{years}y"
+        cache_key = symbol.upper()
         
         if use_cache and cache_key in self._price_cache:
             cached = self._price_cache[cache_key]
-            if cached is not None and not cached.empty:
-                return cached
+            cached_years = self._price_cache_years.get(cache_key, 0)
+            if cached is not None and not cached.empty and cached_years >= years:
+                return self._filter_price_history(cached, years)
         
         # Try local first
         logger.info(f"Fetching price history for {symbol}...")
@@ -645,7 +647,8 @@ class DataSourceManager:
         
         if df is not None and not df.empty:
             self._price_cache[cache_key] = df
-            return df
+            self._price_cache_years[cache_key] = years
+            return self._filter_price_history(df, years)
         
         logger.warning(f"No price history found for {symbol}")
         return None
@@ -749,9 +752,10 @@ class DataSourceManager:
         if cache_key in self._info_cache:
             del self._info_cache[cache_key]
         
-        for key in list(self._price_cache.keys()):
-            if key.startswith(cache_key):
-                del self._price_cache[key]
+        if cache_key in self._price_cache:
+            del self._price_cache[cache_key]
+        if cache_key in self._price_cache_years:
+            del self._price_cache_years[cache_key]
         
         # Refresh local files from Yahoo Finance (gap fill)
         try:
@@ -777,3 +781,18 @@ class DataSourceManager:
         """Clear all caches."""
         self._info_cache.clear()
         self._price_cache.clear()
+        self._price_cache_years.clear()
+
+    def _filter_price_history(self, df: pd.DataFrame, years: int) -> pd.DataFrame:
+        """Filter cached price history to the requested window."""
+        if df is None or df.empty:
+            return df
+        if "date" not in df.columns:
+            return df
+        try:
+            df = df.copy()
+            df["date"] = pd.to_datetime(df["date"])
+            cutoff = datetime.now() - timedelta(days=years * 365)
+            return df[df["date"] >= cutoff].sort_values("date")
+        except Exception:
+            return df
