@@ -141,21 +141,36 @@ def get_preset_config(choice, system_info):
     return {}
 
 
-def create_directories():
-    """Create model directories."""
-    dirs = [
-        "models/forecaster/chronos-t5-base",
-        "models/forecaster/chronos-t5-small", 
-        "models/forecaster/chronos-t5-tiny",
-        "models/forecaster/lag-llama",
-        "models/classifier/lightgbm",
-        "models/classifier/catboost",
-        "models/explainer/qwen2.5-3b",
-        "models/explainer/qwen2.5-7b",
-    ]
+def create_directories(config):
+    """Create model directories for selected models only."""
+    dirs = []
+    forecaster = config.get("forecaster")
+    explainer = config.get("explainer")
+    classifier = config.get("classifier")
+
+    if forecaster:
+        dirs.append(f"models/forecaster/{forecaster}")
+    if classifier:
+        dirs.append(f"models/classifier/{classifier}")
+    if explainer:
+        dirs.append(f"models/explainer/{explainer}")
+
     for d in dirs:
-        Path(d).mkdir(parents=True, exist_ok=True)
-    print("\n✓ Created model directories")
+        path = Path(d)
+        if path.exists() and path.is_file():
+            backup = path.with_name(f"{path.name}.bak")
+            counter = 1
+            while backup.exists():
+                backup = path.with_name(f"{path.name}.bak{counter}")
+                counter += 1
+            path.rename(backup)
+            print(f"⚠ Found file where directory expected: {path}")
+            print(f"   Renamed to: {backup}")
+        path.mkdir(parents=True, exist_ok=True)
+    if dirs:
+        print("\n✓ Created model directories")
+    else:
+        print("\n✓ No model directories to create")
 
 
 def download_forecaster(model_name):
@@ -397,7 +412,7 @@ def main():
         config = get_preset_config(choice, system_info)
     
     # Create directories
-    create_directories()
+    create_directories(config)
     
     # Download models
     success = True
