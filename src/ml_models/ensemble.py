@@ -371,21 +371,23 @@ class MLEnsemble:
                 prediction.errors.append(f"Forecaster error: {e}")
                 self._logger.error(f"Forecaster failed: {e}")
         
-        # Step 2: Extract features
-        feature_set = self._feature_engineer.extract_features(
-            symbol=symbol,
-            prices=price_series,
-            governance_result=governance_result,
-            financial_result=financial_result,
-            valuation_result=valuation_result,
-            market_result=market_result,
-            forecast_result=forecast_result,
-            macro_data=macro_data,
-        )
-        prediction.feature_set = feature_set
+        # Step 2: Extract features (only if needed by classifier/explainer)
+        feature_set = None
+        if self._classifier or self._explainer:
+            feature_set = self._feature_engineer.extract_features(
+                symbol=symbol,
+                prices=price_series,
+                governance_result=governance_result,
+                financial_result=financial_result,
+                valuation_result=valuation_result,
+                market_result=market_result,
+                forecast_result=forecast_result,
+                macro_data=macro_data,
+            )
+            prediction.feature_set = feature_set
         
         # Step 3: Run classifier
-        if self._classifier and self._classifier.is_ready:
+        if self._classifier and self._classifier.is_ready and feature_set:
             try:
                 classifier_result = self._classifier.classify(feature_set.features)
                 
@@ -419,7 +421,7 @@ class MLEnsemble:
             prediction.ml_score = current_confidence * 100
         
         # Step 4: Generate explanation
-        if self._explainer:
+        if self._explainer and feature_set:
             try:
                 # Build context
                 context = AnalysisContext(

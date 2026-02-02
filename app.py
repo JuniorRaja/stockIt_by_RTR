@@ -17,7 +17,7 @@ import logging
 sys.path.insert(0, str(Path(__file__).parent))
 
 from src.utils.config import load_config, get_config
-from src.utils.helpers import calculate_cagr
+from src.utils.helpers import calculate_cagr, format_percentage
 from src.data.sources import DataSourceManager
 from src.data.macro import get_macro_provider
 from src.data.database import DatabaseManager
@@ -437,14 +437,20 @@ def _render_all_stocks_modal(app):
         selected_sector = st.session_state.get(sector_key, "All sectors")
         if selected_sector != "All sectors":
             stock_info_df = stock_info_df[stock_info_df["sector"] == selected_sector]
+
+        holding_years = int(app.config.get("ui", {}).get("default_holding_tenure", 5) or 5)
+        stock_info_df["cagr"] = stock_info_df["symbol"].apply(
+            lambda s: app.data_manager.get_stock_cagr(s, holding_years)
+        )
         
-        display_df = stock_info_df[["symbol", "name", "sector", "current_price"]].copy()
+        display_df = stock_info_df[["symbol", "name", "sector", "current_price", "cagr"]].copy()
         display_df = display_df.sort_values("symbol")
         display_df.rename(columns={
             "symbol": "Symbol",
             "name": "Name",
             "sector": "Sector",
             "current_price": "Current Price",
+            "cagr": f"CAGR ({holding_years}Y)",
         }, inplace=True)
         display_df["Analyze"] = False
         
@@ -459,8 +465,13 @@ def _render_all_stocks_modal(app):
                     help="Select a stock to analyze",
                     default=False,
                 ),
+                f"CAGR ({holding_years}Y)": st.column_config.NumberColumn(
+                    f"CAGR ({holding_years}Y)",
+                    format="%.2f%%",
+                    help="Pre-calculated CAGR from the local database",
+                ),
             },
-            disabled=["Symbol", "Name", "Sector", "Current Price"],
+            disabled=["Symbol", "Name", "Sector", "Current Price", f"CAGR ({holding_years}Y)"],
             key="all_stocks_editor",
         )
         
@@ -731,6 +742,7 @@ def main():
         profile = UserProfile(expected_return=profile_dict['expected_return'],
                               risk_appetite=profile_dict['risk_appetite'],
                               holding_tenure=profile_dict['holding_tenure'])
+        profile_cache_key = json.dumps(profile_dict, sort_keys=True)
         st.markdown("---")
         st.subheader("Analysis Options")
         st.session_state.enable_ml = st.checkbox(
@@ -886,7 +898,7 @@ def main():
     
     # Handle reset
     if reset:
-        for key in ['results', 'data', 'symbol', 'show_suggestions', 'selected_stock']:
+        for key in ['results', 'data', 'symbol', 'show_suggestions', 'selected_stock', 'ml_analysis_cache']:
             if key in st.session_state:
                 del st.session_state[key]
         st.rerun()
@@ -899,6 +911,12 @@ def main():
             with st.spinner(f"Refreshing {symbol}..."):
                 success, message = app.data_manager.refresh_data(symbol)
             if success:
+                ml_cache = st.session_state.get("ml_analysis_cache", {})
+                if ml_cache:
+                    for key in list(ml_cache.keys()):
+                        if key[0] == symbol:
+                            del ml_cache[key]
+                    st.session_state["ml_analysis_cache"] = ml_cache
                 st.success(message)
             else:
                 st.error(message)
@@ -931,12 +949,22 @@ def main():
                 max_candidates_for_signal = 200
                 candidate_symbols = ranked["symbol"].tolist()[:max_candidates_for_signal]
                 filtered_symbols = []
+                fetched_data = {}
+                
+                def _get_cached_data(symbol: str):
+                    if symbol in fetched_data:
+                        return fetched_data[symbol]
+                    data = app.fetch_data(symbol, show_spinner=False, show_errors=False)
+                    if data:
+                        fetched_data[symbol] = data
+                    return data
+                
                 with st.spinner("Filtering candidates by CAGR and signal..."):
                     for s in candidate_symbols:
                         stock_cagr = app.data_manager.get_stock_cagr(s, holding_period)
                         data = None
                         if stock_cagr is None:
-                            data = app.fetch_data(s, show_spinner=False, show_errors=False)
+                            data = _get_cached_data(s)
                             if not data:
                                 continue
                             stock_cagr = _calculate_price_cagr(data.get("price_history"), holding_period)
@@ -945,7 +973,7 @@ def main():
                         if not (expected_cagr - cagr_tolerance <= stock_cagr <= expected_cagr + cagr_tolerance):
                             continue
                         if data is None:
-                            data = app.fetch_data(s, show_spinner=False, show_errors=False)
+                            data = _get_cached_data(s)
                             if not data:
                                 continue
                         results = app.run_analysis(s, profile, data, show_spinner=False, enable_ml=False)
@@ -996,12 +1024,20 @@ def main():
             data = app.fetch_data(symbol)
             if data:
                 st.session_state.data = data
-                st.session_state.results = app.run_analysis(
-                    symbol,
-                    profile,
-                    data,
-                    enable_ml=st.session_state.enable_ml
-                )
+                ml_cache = st.session_state.get("ml_analysis_cache", {})
+                cache_key = (symbol, bool(st.session_state.enable_ml), profile_cache_key)
+                cached = ml_cache.get(cache_key)
+                if cached:
+                    st.session_state.results = cached
+                else:
+                    st.session_state.results = app.run_analysis(
+                        symbol,
+                        profile,
+                        data,
+                        enable_ml=st.session_state.enable_ml
+                    )
+                    ml_cache[cache_key] = st.session_state.results
+                    st.session_state["ml_analysis_cache"] = ml_cache
     
     if analyze and symbol:
         st.session_state.symbol = symbol
@@ -1009,12 +1045,20 @@ def main():
         data = app.fetch_data(symbol)
         if data:
             st.session_state.data = data
-            st.session_state.results = app.run_analysis(
-                symbol,
-                profile,
-                data,
-                enable_ml=st.session_state.enable_ml
-            )
+            ml_cache = st.session_state.get("ml_analysis_cache", {})
+            cache_key = (symbol, bool(st.session_state.enable_ml), profile_cache_key)
+            cached = ml_cache.get(cache_key)
+            if cached:
+                st.session_state.results = cached
+            else:
+                st.session_state.results = app.run_analysis(
+                    symbol,
+                    profile,
+                    data,
+                    enable_ml=st.session_state.enable_ml
+                )
+                ml_cache[cache_key] = st.session_state.results
+                st.session_state["ml_analysis_cache"] = ml_cache
     
     if hasattr(st.session_state, 'results') and st.session_state.results:
         results = st.session_state.results
@@ -1034,7 +1078,12 @@ def main():
             st.markdown(f"*{results['explain'].summary}*")
             info = data.get('stock_info', {})
             st.subheader("Company Profile")
-            col_info1, col_info2, col_info3, col_info4 = st.columns(4)
+            col_info1, col_info2, col_info3, col_info4, col_info5 = st.columns(5)
+            profile_obj = st.session_state.get("profile")
+            holding_years = int(getattr(profile_obj, "holding_tenure", 5) or 5)
+            pre_cagr = app.data_manager.get_stock_cagr(symbol, holding_years)
+            if pre_cagr is None:
+                pre_cagr = _calculate_price_cagr(data.get("price_history"), holding_years)
             with col_info1:
                 st.metric(
                     "Current Price",
@@ -1046,6 +1095,11 @@ def main():
                 st.markdown(f"**Industry**: {info.get('industry', 'Unknown')}")
             with col_info4:
                 st.markdown(f"**City**: {info.get('city', 'Unknown')}")
+            with col_info5:
+                st.metric(
+                    f"CAGR ({holding_years}Y)",
+                    format_percentage(pre_cagr) if pre_cagr is not None else "N/A"
+                )
 
             summary = info.get('business_summary')
             if summary:
