@@ -26,3 +26,14 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+
+# Source - https://stackoverflow.com/a/70761193
+# Posted by Ben Butterworth, modified by community. See post 'Timeline' for change history
+# Retrieved 2026-02-01, License - CC BY-SA 4.0
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1 # alternatively, use `count: all` for all GPUs
+              capabilities: [gpu]
