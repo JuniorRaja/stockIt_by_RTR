@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Train the LightGBM classifier using local stock data.
+Train the classifier using local stock data.
 
 Usage:
     python train_classifier.py
 
 This script uses the pre-downloaded stock data in the 'data' directory.
+Classifier type (LightGBM or CatBoost) is read from config/settings.yaml.
 No internet connection required.
 """
 
@@ -19,6 +20,7 @@ import pandas as pd
 import numpy as np
 import json
 import logging
+import yaml
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 from typing import Optional, Dict, Any, List, Tuple
@@ -36,6 +38,21 @@ PRICES_DIR = DATA_DIR / "prices"
 INFO_DIR = DATA_DIR / "stock_info"
 MODELS_DIR = Path("models")
 DELISTED_DIR = DATA_DIR / "delisted"
+CONFIG_PATH = Path("config/settings.yaml")
+
+
+def get_classifier_type_from_config() -> str:
+    """Read classifier type from config/settings.yaml."""
+    if CONFIG_PATH.exists():
+        try:
+            with open(CONFIG_PATH, 'r') as f:
+                settings = yaml.safe_load(f)
+            classifier_model = settings.get('ml_config', {}).get('classifier', {}).get('model', 'lightgbm')
+            if classifier_model in ('lightgbm', 'catboost'):
+                return classifier_model
+        except Exception as e:
+            logger.warning(f"Could not read config, defaulting to lightgbm: {e}")
+    return 'lightgbm'
 
 
 def _find_delisted_price_files() -> Dict[str, Path]:
@@ -348,8 +365,12 @@ def generate_time_series_samples(
 
 
 def main():
+    # Get classifier type from config
+    classifier_type = get_classifier_type_from_config()
+    classifier_name = classifier_type.upper()
+    
     print("\n" + "=" * 60)
-    print("  LightGBM Classifier Training (Local Data)")
+    print(f"  {classifier_name} Classifier Training (Local Data)")
     print("=" * 60)
     
     # Check data directory
@@ -361,6 +382,7 @@ def main():
     # Get available stocks
     stocks = get_available_stocks()
     print(f"\n📊 Found {len(stocks)} stocks with local data")
+    print(f"🔧 Using classifier: {classifier_name}")
     
     if len(stocks) < 50:
         print("❌ Not enough stocks for training (need at least 50)")
@@ -462,48 +484,75 @@ def main():
     print(f"   Train: {len(X_train)} samples, Test: {len(X_test)} samples")
     
     model = None
-    model_type = "lightgbm"
+    model_type = classifier_type
     
-    # Try LightGBM first
-    try:
-        import lightgbm as lgb
-        print("   Using LightGBM...")
-        
-        model = lgb.LGBMClassifier(
-            n_estimators=200,
-            learning_rate=0.05,
-            max_depth=6,
-            num_leaves=31,
-            min_child_samples=10,
-            class_weight='balanced',
-            random_state=42,
-            verbose=-1,
-        )
-        model.fit(X_train, y_train, sample_weight=w_train)
-        
-    except Exception as e:
-        print(f"   LightGBM failed: {str(e)[:50]}...")
-        print("   Falling back to sklearn GradientBoosting...")
-        
-        # Fallback to sklearn
+    # Train based on configured classifier type
+    if classifier_type == "catboost":
         try:
-            from sklearn.ensemble import GradientBoostingClassifier
-            model_type = "sklearn_gb"
+            from catboost import CatBoostClassifier
+            print("   Using CatBoost...")
             
-            model = GradientBoostingClassifier(
-                n_estimators=100,
-                learning_rate=0.1,
-                max_depth=5,
-                random_state=42,
+            model = CatBoostClassifier(
+                iterations=200,
+                learning_rate=0.05,
+                depth=6,
+                loss_function='MultiClass',
+                classes_count=4,
+                auto_class_weights='Balanced',
+                random_seed=42,
+                verbose=0,
             )
             model.fit(X_train, y_train, sample_weight=w_train)
             
-        except Exception as e2:
-            print(f"\n❌ Training failed: {e2}")
-            print("\n💡 To fix LightGBM on Mac, run:")
-            print("   brew install libomp")
-            print("   pip install --force-reinstall lightgbm")
-            return False
+        except ImportError:
+            print("   CatBoost not installed, falling back to LightGBM...")
+            classifier_type = "lightgbm"
+        except Exception as e:
+            print(f"   CatBoost failed: {str(e)[:50]}...")
+            print("   Falling back to LightGBM...")
+            classifier_type = "lightgbm"
+    
+    if classifier_type == "lightgbm" and model is None:
+        try:
+            import lightgbm as lgb
+            print("   Using LightGBM...")
+            model_type = "lightgbm"
+            
+            model = lgb.LGBMClassifier(
+                n_estimators=200,
+                learning_rate=0.05,
+                max_depth=6,
+                num_leaves=31,
+                min_child_samples=10,
+                class_weight='balanced',
+                random_state=42,
+                verbose=-1,
+            )
+            model.fit(X_train, y_train, sample_weight=w_train)
+            
+        except Exception as e:
+            print(f"   LightGBM failed: {str(e)[:50]}...")
+            print("   Falling back to sklearn GradientBoosting...")
+            
+            # Fallback to sklearn
+            try:
+                from sklearn.ensemble import GradientBoostingClassifier
+                model_type = "sklearn_gb"
+                
+                model = GradientBoostingClassifier(
+                    n_estimators=100,
+                    learning_rate=0.1,
+                    max_depth=5,
+                    random_state=42,
+                )
+                model.fit(X_train, y_train, sample_weight=w_train)
+                
+            except Exception as e2:
+                print(f"\n❌ Training failed: {e2}")
+                print("\n💡 To fix LightGBM on Mac, run:")
+                print("   brew install libomp")
+                print("   pip install --force-reinstall lightgbm")
+                return False
     
     if model is None:
         print("\n❌ No classifier model available")
@@ -535,8 +584,8 @@ def main():
     except Exception:
         pass
     
-    # Save model
-    model_dir = MODELS_DIR / "classifier" / "lightgbm"
+    # Save model to the correct directory based on classifier type
+    model_dir = MODELS_DIR / "classifier" / model_type
     model_dir.mkdir(parents=True, exist_ok=True)
     
     import pickle
@@ -551,7 +600,7 @@ def main():
         }, f)
     
     print(f"\n💾 Model saved to: {model_path}")
-    print("\n🎉 Classifier training complete! You can now run the app.")
+    print(f"\n🎉 {model_type.upper()} classifier training complete! You can now run the app.")
     
     return True
 
