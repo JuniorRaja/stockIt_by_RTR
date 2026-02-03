@@ -437,6 +437,7 @@ def _render_sebi_disclaimer_modal():
 
 def _render_all_stocks_modal(app):
     def _body():
+        st.session_state.all_stocks_rendered = True
         col_title, col_close = st.columns([5, 1])
         st.markdown("### Sectors")
         stock_info_df = _load_stock_info_index()
@@ -919,7 +920,10 @@ def main():
         _render_howto_modal()
         st.session_state.show_howto = False
     elif st.session_state.get("show_all_stocks"):
+        st.session_state.all_stocks_rendered = False
         _render_all_stocks_modal(app)
+        if not st.session_state.all_stocks_rendered:
+            st.session_state.show_all_stocks = False
     
     st.title("Stock Analysis")
     
