@@ -898,21 +898,27 @@ def main():
         with col_wiki:
             if st.button("Wiki", use_container_width=True):
                 st.session_state.show_wiki = True
+                st.session_state.show_howto = False
+                st.session_state.show_all_stocks = False
         with col_howto:
             if st.button("How-to?", use_container_width=True):
                 st.session_state.show_howto = True
+                st.session_state.show_wiki = False
+                st.session_state.show_all_stocks = False
         if st.button("View all Stocks", use_container_width=True):
             st.session_state.show_all_stocks = True
+            st.session_state.show_wiki = False
+            st.session_state.show_howto = False
 
         render_footer()
 
     if st.session_state.get("show_wiki"):
         _render_wiki_modal()
         st.session_state.show_wiki = False
-    if st.session_state.get("show_howto"):
+    elif st.session_state.get("show_howto"):
         _render_howto_modal()
         st.session_state.show_howto = False
-    if st.session_state.get("show_all_stocks"):
+    elif st.session_state.get("show_all_stocks"):
         _render_all_stocks_modal(app)
     
     st.title("Stock Analysis")
