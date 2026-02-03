@@ -34,6 +34,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 DATA_DIR = PROJECT_ROOT / 'data'
 PRICE_DIR = DATA_DIR / 'prices'
 INFO_DIR = DATA_DIR / 'stock_info'
+FINANCIALS_DIR = DATA_DIR / 'financials'
 DB_PATH = DATA_DIR / 'db' / 'equity_intelligence.db'
 
 
@@ -250,6 +251,41 @@ class LocalDataSource:
                 logger.info(f"Got {len(historic_df)} historic records for {symbol}")
                 return historic_df.sort_values("date")
 
+        return None
+
+    def get_financials(self, symbol: str) -> Optional[Dict[str, pd.DataFrame]]:
+        """Get financial statements from local storage (if available)."""
+        fin_file = FINANCIALS_DIR / f"{symbol}.json"
+        if not fin_file.exists():
+            return None
+        try:
+            with open(fin_file) as f:
+                payload = json.load(f)
+            result = {"source": payload.get("source", "local_file")}
+            for key in ["income_statement", "balance_sheet", "cash_flow"]:
+                data = payload.get(key)
+                if data and isinstance(data, dict) and data.get("data") is not None:
+                    df = pd.DataFrame(data.get("data"), columns=data.get("columns"))
+                    idx = data.get("index")
+                    if idx is not None:
+                        df.index = idx
+                    result[key] = df
+                else:
+                    result[key] = pd.DataFrame()
+            div_payload = payload.get("dividends")
+            if div_payload and isinstance(div_payload, dict):
+                div_index = div_payload.get("index") or []
+                div_values = div_payload.get("values") or []
+                if len(div_index) == len(div_values) and div_index:
+                    div_series = pd.Series(div_values, index=pd.to_datetime(div_index))
+                    result["dividends"] = div_series.sort_index()
+                else:
+                    result["dividends"] = pd.Series(dtype=float)
+            else:
+                result["dividends"] = pd.Series(dtype=float)
+            return result
+        except Exception as e:
+            logger.debug(f"Error reading financials for {symbol}: {e}")
         return None
 
     def get_index_history(self, index_symbol: str, years: int = 30) -> Optional[pd.DataFrame]:
@@ -676,6 +712,10 @@ class DataSourceManager:
     
     def get_financials(self, symbol: str) -> Dict[str, pd.DataFrame]:
         """Get financial statements."""
+        local_fin = self.local.get_financials(symbol)
+        if local_fin:
+            return local_fin
+
         # Try Yahoo Finance if online
         if not self.offline_mode:
             try:
@@ -687,6 +727,7 @@ class DataSourceManager:
                             'income_statement': ticker.financials.T if ticker.financials is not None else pd.DataFrame(),
                             'balance_sheet': ticker.balance_sheet.T if ticker.balance_sheet is not None else pd.DataFrame(),
                             'cash_flow': ticker.cashflow.T if ticker.cashflow is not None else pd.DataFrame(),
+                            'dividends': ticker.dividends if ticker.dividends is not None else pd.Series(dtype=float),
                             'source': f'yahoo_finance{suffix}'
                         }
                     except:

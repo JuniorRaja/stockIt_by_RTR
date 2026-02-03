@@ -32,6 +32,7 @@ This is not just a screener. It is a **Time Machine**. It allows you to validate
 We don't rely on a single model. Stocron uses a hybrid architecture:
 * **The Forecaster (Chronos-T5):** A Transformer-based model (pretrained by Amazon) that treats stock charts like a language to predict future price sequences.
 * **The Classifier (LightGBM):** A gradient-boosting decision engine that analyzes hundreds of features (Financials, Macro, Technicals) to generate a binary `BUY`/`HOLD` signal.
+* **The Explainer (Qwen2.5):** A local LLM that generates human-readable explanations for AI decisions.
 
 ### 2. Time Travel & Survivorship ⏳
 Most backtests are fake because they test on companies that exist *today*.
@@ -79,6 +80,8 @@ The system is containerized for stability and reproducibility.
     │ │ Chronos-T5     │ │
     │ ├────────────────┤ │
     │ │ LightGBM       │ │
+    │ ├────────────────┤ │
+    │ │ Qwen2.5 (LLM)  │ │
     │ └────────────────┘ │
     └────────────────────┘
 ```
@@ -99,10 +102,10 @@ cd stockIt_by_RTR
 # 2) Build + start the app container
 docker-compose up -d --build
 
-# 3) Build local DB from bundled historic data (stocks + indices)
-docker-compose exec stocron-by-rtr python 2-download_all_stocks.py --build-db-only
+# 3) Download missing live symbols (recommended)
+docker-compose exec stocron-by-rtr python 2-download_all_stocks.py --with-financials
 
-# 4) Download missing live symbols (recommended)
+# If you don't want Warren Buffet's scoring, just download stock info without financials
 docker-compose exec stocron-by-rtr python 2-download_all_stocks.py
 
 # 5) Delisted stocks (recommended for survivorship bias)

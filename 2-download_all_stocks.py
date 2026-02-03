@@ -47,6 +47,7 @@ PROJECT_ROOT = Path(__file__).parent
 DATA_DIR = PROJECT_ROOT / 'data'
 PRICE_DIR = DATA_DIR / 'prices'
 INFO_DIR = DATA_DIR / 'stock_info'
+FINANCIALS_DIR = DATA_DIR / 'financials'
 PROGRESS_FILE = DATA_DIR / 'download_progress.json'
 STOCK_LIST_FILE = DATA_DIR / 'stock_lists' / 'all_nse_stocks.json'
 HISTORIC_STOCK_INDEX_FILE = DATA_DIR / 'stock_lists' / 'historic_stock_symbols.json'
@@ -60,7 +61,7 @@ CAGR_WINDOWS_YEARS = [1, 3, 5, 10]
 
 def setup_directories():
     """Create data directories."""
-    for d in [DATA_DIR, PRICE_DIR, INFO_DIR, DATA_DIR / 'stock_lists', DATA_DIR / 'db']:
+    for d in [DATA_DIR, PRICE_DIR, INFO_DIR, FINANCIALS_DIR, DATA_DIR / 'stock_lists', DATA_DIR / 'db']:
         d.mkdir(parents=True, exist_ok=True)
 
 
@@ -391,7 +392,40 @@ def save_progress(progress):
         json.dump(progress, f)
 
 
-def download_stock_data(symbol: str, years: int = 30, retry_count: int = 0, max_retries: int = 3) -> dict:
+def _df_to_payload(df):
+    if df is None:
+        return None
+    try:
+        df = df.copy()
+        df.index = df.index.astype(str)
+        df.columns = [str(c) for c in df.columns]
+        return df.to_dict(orient="split")
+    except Exception:
+        return None
+
+
+def _series_to_payload(series):
+    if series is None:
+        return None
+    try:
+        series = series.dropna()
+        if series.empty:
+            return None
+        return {
+            "index": [str(i) for i in series.index],
+            "values": [float(v) for v in series.values],
+        }
+    except Exception:
+        return None
+
+
+def download_stock_data(
+    symbol: str,
+    years: int = 30,
+    retry_count: int = 0,
+    max_retries: int = 3,
+    include_financials: bool = False,
+) -> dict:
     """Download 30 years of data for a single stock from Yahoo Finance with retry logic."""
     import yfinance as yf
     import pandas as pd
@@ -402,6 +436,7 @@ def download_stock_data(symbol: str, years: int = 30, retry_count: int = 0, max_
         'success': False,
         'price_records': 0,
         'info': False,
+        'financials': False,
         'error': None,
         'years_of_data': 0,
         'retried': retry_count > 0
@@ -469,6 +504,30 @@ def download_stock_data(symbol: str, years: int = 30, retry_count: int = 0, max_
                             result['info'] = True
                     except:
                         pass
+
+                    # Optional: download financial statements for offline analysis
+                    if include_financials:
+                        time.sleep(0.3)
+                        try:
+                            income_stmt = ticker.financials
+                            balance_sheet = ticker.balance_sheet
+                            cash_flow = ticker.cashflow
+                            dividends = ticker.dividends
+                            payload = {
+                                "symbol": symbol,
+                                "downloaded_at": datetime.now().isoformat(),
+                                "income_statement": _df_to_payload(income_stmt),
+                                "balance_sheet": _df_to_payload(balance_sheet),
+                                "cash_flow": _df_to_payload(cash_flow),
+                                "dividends": _series_to_payload(dividends),
+                                "source": f"yahoo{suffix}",
+                            }
+                            fin_file = FINANCIALS_DIR / f"{symbol}.json"
+                            with open(fin_file, "w") as f:
+                                json.dump(payload, f, indent=2)
+                            result['financials'] = True
+                        except Exception:
+                            pass
                     
                     result['success'] = True
                     return result
@@ -487,7 +546,7 @@ def download_stock_data(symbol: str, years: int = 30, retry_count: int = 0, max_
     return result
 
 
-def download_failed_stocks(failed_symbols: list, workers: int = 2) -> tuple:
+def download_failed_stocks(failed_symbols: list, workers: int = 2, include_financials: bool = False) -> tuple:
     """Retry downloading failed stocks with slower rate and more retries."""
     logger.info(f"\n{'='*60}")
     logger.info(f"RETRYING {len(failed_symbols)} FAILED STOCKS")
@@ -505,7 +564,7 @@ def download_failed_stocks(failed_symbols: list, workers: int = 2) -> tuple:
         batch = failed_symbols[i:i+batch_size]
         
         with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {executor.submit(download_stock_data, sym, YEARS_OF_DATA, 1, 3): sym 
+            futures = {executor.submit(download_stock_data, sym, YEARS_OF_DATA, 1, 3, include_financials): sym 
                       for sym in batch}
             
             for future in as_completed(futures):
@@ -529,7 +588,7 @@ def download_failed_stocks(failed_symbols: list, workers: int = 2) -> tuple:
     return success_count, still_failed, total_records
 
 
-def download_all(symbols: list, workers: int = 2, resume: bool = False):
+def download_all(symbols: list, workers: int = 2, resume: bool = False, include_financials: bool = False):
     """Download all stocks with parallel workers and rate limiting."""
     progress = load_progress() if resume else {'completed': [], 'failed': [], 'last_update': None}
     
@@ -563,7 +622,7 @@ def download_all(symbols: list, workers: int = 2, resume: bool = False):
         with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {}
             for stock in batch:
-                future = executor.submit(download_stock_data, stock['symbol'], YEARS_OF_DATA)
+                future = executor.submit(download_stock_data, stock['symbol'], YEARS_OF_DATA, 0, 3, include_financials)
                 futures[future] = stock['symbol']
             
             for future in as_completed(futures):
@@ -901,6 +960,8 @@ def main():
     parser.add_argument('--download-all', action='store_true', help='Download all NSE stocks (ignore local data)')
     parser.add_argument('--refresh-symbol', type=str, help='Refresh a symbol (comma-separated)')
     parser.add_argument('--refresh-missing', action='store_true', help='Refresh only missing live symbols')
+    parser.add_argument('--with-financials', action='store_true',
+                        help='Download financial statements for offline analysis')
     args = parser.parse_args()
     
     print("=" * 70)
@@ -970,7 +1031,9 @@ def main():
         print(f"Retrying {len(failed_list)} failed stocks...")
         print()
         
-        retry_success, still_failed, retry_records = download_failed_stocks(failed_list, workers=2)
+        retry_success, still_failed, retry_records = download_failed_stocks(
+            failed_list, workers=2, include_financials=args.with_financials
+        )
         
         # Update progress
         progress['completed'].extend([s for s in failed_list if s not in still_failed])
@@ -1061,6 +1124,8 @@ def main():
     print(f"Estimated time: {est_time:.0f}-{est_time*2:.0f} minutes (with rate limiting)")
     print()
     print("NOTE: Using rate limiting to avoid Yahoo Finance blocks.")
+    if args.with_financials:
+        print("      Financial statements will also be downloaded for offline analysis.")
     print("      If many fail, run: python download_all_stocks.py --retry-failed")
     print()
 
@@ -1081,7 +1146,12 @@ def main():
     print("=" * 70)
     
     start_time = time.time()
-    success, failed, total_records, failed_symbols = download_all(symbols_to_download, workers=workers, resume=args.resume)
+    success, failed, total_records, failed_symbols = download_all(
+        symbols_to_download,
+        workers=workers,
+        resume=args.resume,
+        include_financials=args.with_financials,
+    )
     elapsed = time.time() - start_time
     
     # Auto-retry failed downloads if there are many failures
@@ -1091,7 +1161,9 @@ def main():
         print(f"STEP 3b: Retrying {len(failed_symbols)} failed downloads...")
         print("=" * 70)
         
-        retry_success, still_failed, retry_records = download_failed_stocks(failed_symbols, workers=2)
+        retry_success, still_failed, retry_records = download_failed_stocks(
+            failed_symbols, workers=2, include_financials=args.with_financials
+        )
         success += retry_success
         failed = len(still_failed)
         total_records += retry_records
