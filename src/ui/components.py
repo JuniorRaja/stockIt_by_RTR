@@ -14,7 +14,7 @@ def render_stock_search(on_search: Callable[[str], None], stock_list: Optional[L
         else:
             symbol = st.text_input("Enter NSE Symbol", placeholder="e.g., RELIANCE, TCS, INFY").upper()
     with col2:
-        clicked = st.button("Analyze", type="primary", use_container_width=True)
+        clicked = st.button("Analyze", type="primary", width="stretch")
     if clicked and symbol:
         on_search(symbol)
         return symbol
