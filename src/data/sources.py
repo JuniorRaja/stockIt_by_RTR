@@ -269,6 +269,7 @@ class LocalDataSource:
                     idx = data.get("index")
                     if idx is not None:
                         df.index = idx
+                    df = self._normalize_financial_df(df)
                     result[key] = df
                 else:
                     result[key] = pd.DataFrame()
@@ -287,6 +288,41 @@ class LocalDataSource:
         except Exception as e:
             logger.debug(f"Error reading financials for {symbol}: {e}")
         return None
+
+    @staticmethod
+    def _normalize_financial_df(df: pd.DataFrame) -> pd.DataFrame:
+        """Ensure line items are columns (match online mode)."""
+        if df is None or df.empty:
+            return df
+        line_items = {
+            "Total Revenue",
+            "Revenue",
+            "Net Sales",
+            "Net Income",
+            "Profit After Tax",
+            "PAT",
+            "Net Profit",
+            "EBIT",
+            "Operating Income",
+            "Operating Profit",
+            "Interest Expense",
+            "Finance Costs",
+            "Total Assets",
+            "Total Stockholder Equity",
+            "Stockholders Equity",
+            "Total Equity",
+            "Current Assets",
+            "Current Liabilities",
+            "Cash From Operating Activities",
+            "Operating Cash Flow",
+            "Capital Expenditure",
+            "Dividends Paid",
+        }
+        has_line_items_in_index = any(item in df.index for item in line_items)
+        has_line_items_in_cols = any(item in df.columns for item in line_items)
+        if has_line_items_in_index and not has_line_items_in_cols:
+            return df.T
+        return df
 
     def get_index_history(self, index_symbol: str, years: int = 30) -> Optional[pd.DataFrame]:
         """Get index history from local storage."""

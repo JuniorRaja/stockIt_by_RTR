@@ -341,6 +341,46 @@ def get_local_stock_symbols() -> list:
     return sorted(symbols)
 
 
+def get_local_financial_symbols() -> list:
+    """Get stock symbols with cached financial statements."""
+    symbols = set()
+    if FINANCIALS_DIR.exists():
+        for f in FINANCIALS_DIR.glob("*.json"):
+            symbols.add(f.stem.upper())
+    return sorted(symbols)
+
+
+def _is_financials_cache_valid(path: Path) -> bool:
+    """Check if cached financials look complete enough for analysis."""
+    try:
+        with open(path) as f:
+            payload = json.load(f)
+        if not isinstance(payload, dict):
+            return False
+        for key in ["income_statement", "balance_sheet", "cash_flow"]:
+            block = payload.get(key)
+            if not isinstance(block, dict):
+                return False
+            cols = block.get("columns") or []
+            data = block.get("data") or []
+            if len(cols) < 2 or len(data) < 2:
+                return False
+        return True
+    except Exception:
+        return False
+
+
+def get_invalid_financial_symbols() -> list:
+    """Get symbols with missing/invalid financial cache."""
+    invalid = []
+    if not FINANCIALS_DIR.exists():
+        return invalid
+    for f in FINANCIALS_DIR.glob("*.json"):
+        if not _is_financials_cache_valid(f):
+            invalid.append(f.stem.upper())
+    return sorted(invalid)
+
+
 def write_symbol_index(path: Path, items: list, metadata: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
@@ -509,9 +549,9 @@ def download_stock_data(
                     if include_financials:
                         time.sleep(0.3)
                         try:
-                            income_stmt = ticker.financials
-                            balance_sheet = ticker.balance_sheet
-                            cash_flow = ticker.cashflow
+                            income_stmt = ticker.financials.T if ticker.financials is not None else None
+                            balance_sheet = ticker.balance_sheet.T if ticker.balance_sheet is not None else None
+                            cash_flow = ticker.cashflow.T if ticker.cashflow is not None else None
                             dividends = ticker.dividends
                             payload = {
                                 "symbol": symbol,
@@ -1081,11 +1121,24 @@ def main():
     # Compute missing symbols vs local data
     local_symbols = get_local_stock_symbols()
     missing_symbols = get_missing_live_symbols(symbols, local_symbols)
+    local_financials = get_local_financial_symbols()
+    invalid_financials = set(get_invalid_financial_symbols())
+    missing_financials = [
+        s for s in symbols
+        if s["symbol"].upper() not in local_financials
+        or s["symbol"].upper() in invalid_financials
+    ]
     if missing_symbols:
         write_symbol_index(
             MISSING_STOCK_LIST_FILE,
             [s["symbol"] for s in missing_symbols],
             {"source": "nse_live_vs_local"},
+        )
+    if missing_financials and args.with_financials:
+        write_symbol_index(
+            DATA_DIR / "stock_lists" / "missing_financials.json",
+            [s["symbol"] for s in missing_financials],
+            {"source": "financials_cache"},
         )
 
     if args.refresh_missing:
@@ -1106,9 +1159,15 @@ def main():
     print("=" * 70)
     symbols_to_download = symbols
     if local_symbols and not args.download_all:
-        symbols_to_download = missing_symbols
+        missing_set = {s["symbol"] for s in missing_symbols}
+        if args.with_financials:
+            missing_set.update(s["symbol"] for s in missing_financials)
+        symbols_to_download = [s for s in symbols if s["symbol"] in missing_set]
         print(f"Local symbols detected: {len(local_symbols)}")
-        print(f"Missing live symbols: {len(symbols_to_download)} (downloading missing only)")
+        print(f"Missing live symbols: {len(missing_symbols)}")
+        if args.with_financials:
+            print(f"Missing/invalid financials: {len(missing_financials)}")
+        print(f"Downloading: {len(symbols_to_download)} (missing only)")
     else:
         print(f"Downloading full live list (local count: {len(local_symbols)})")
 
