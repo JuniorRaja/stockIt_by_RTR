@@ -466,7 +466,7 @@ def _render_all_stocks_modal(app):
                 if col.button(
                     label,
                     key=f"sector_btn_{label}",
-                    use_container_width=True,
+                    width="stretch",
                     type=btn_type,
                 ):
                     st.session_state[sector_key] = label
@@ -499,7 +499,7 @@ def _render_all_stocks_modal(app):
             display_df,
             hide_index=True,
             num_rows="fixed",
-            use_container_width=True,
+            width="stretch",
             column_config={
                 "Analyze": st.column_config.CheckboxColumn(
                     "Analyze",
@@ -665,6 +665,7 @@ class IndianEquityIntelligence:
             
             # Run ML-enhanced analysis if enabled and available
             ml_prediction = None
+            ml_skip_reason = None
             if enable_ml and self._ml_enabled and self.ml_ensemble and self._ml_initialized:
                 try:
                     macro_data = None
@@ -675,7 +676,14 @@ class IndianEquityIntelligence:
                             logger.debug(f"Macro data fetch failed: {e}")
 
                     # Respect investable universe filter before ML forecasting
-                    if hasattr(fin, 'investable') and not fin.investable:
+                    respect_investable_filter = bool(
+                        self.config.get('ml_config', {}).get('respect_investable_filter', False)
+                    )
+                    if respect_investable_filter and hasattr(fin, 'investable') and not fin.investable:
+                        if getattr(fin, "investable_reasons", None):
+                            ml_skip_reason = "Investable universe filter: " + "; ".join(fin.investable_reasons)
+                        else:
+                            ml_skip_reason = "Investable universe filter blocked ML."
                         logger.info("Skipping ML prediction due to investable filter")
                     else:
                         with st.spinner("Running ML-enhanced analysis..."):
@@ -744,6 +752,7 @@ class IndianEquityIntelligence:
                 'red_flags': red_flags,
                 'buffett': buffett,
                 'ml_prediction': ml_prediction,  # NEW: ML results
+                'ml_skip_reason': ml_skip_reason,
             }
         if show_spinner:
             with st.spinner("Running analysis..."):
@@ -847,7 +856,7 @@ def main():
             
             if ml_status.get('enabled'):
                 if not ml_status.get('initialized'):
-                    if st.button("🚀 Initialize ML Models", use_container_width=True):
+                    if st.button("🚀 Initialize ML Models", width="stretch"):
                         with st.spinner("Loading ML models..."):
                             success, messages = app.initialize_ml()
                             for msg in messages:
@@ -876,7 +885,7 @@ def main():
                     if hasattr(st.session_state, 'results') and st.session_state.results:
                         ml_pred = st.session_state.results.get('ml_prediction')
                         if not ml_pred or not ml_pred.success:
-                            if st.button("🔄 Re-analyze with ML", use_container_width=True):
+                            if st.button("🔄 Re-analyze with ML", width="stretch"):
                                 symbol = st.session_state.get('symbol')
                                 current_profile = st.session_state.get('profile', profile)
                                 if symbol:
@@ -897,16 +906,16 @@ def main():
         st.markdown("---")
         col_wiki, col_howto = st.columns(2)
         with col_wiki:
-            if st.button("Wiki", use_container_width=True):
+            if st.button("Wiki", width="stretch"):
                 st.session_state.show_wiki = True
                 st.session_state.show_howto = False
                 st.session_state.show_all_stocks = False
         with col_howto:
-            if st.button("How-to?", use_container_width=True):
+            if st.button("How-to?", width="stretch"):
                 st.session_state.show_howto = True
                 st.session_state.show_wiki = False
                 st.session_state.show_all_stocks = False
-        if st.button("View all Stocks", use_container_width=True):
+        if st.button("View all Stocks", width="stretch"):
             st.session_state.show_all_stocks = True
             st.session_state.show_wiki = False
             st.session_state.show_howto = False
@@ -977,13 +986,13 @@ def main():
         else:
             symbol = st.text_input("Enter NSE Stock Symbol", placeholder="e.g., RELIANCE, TCS, INFY").upper().strip()
     with col2:
-        analyze = st.button("🔍 Analyze", type="primary", use_container_width=True)
+        analyze = st.button("🔍 Analyze", type="primary", width="stretch")
     with col3:
-        suggest = st.button("💡 Suggest", use_container_width=True)
+        suggest = st.button("💡 Suggest", width="stretch")
     with col4:
-        reset = st.button("🔄 Reset UI", use_container_width=True)
+        reset = st.button("🔄 Reset UI", width="stretch")
     with col5:
-        refresh = st.button("🔁 Refresh a Stock", use_container_width=True)
+        refresh = st.button("🔁 Refresh a Stock", width="stretch")
     
     # Handle reset
     if reset:
@@ -1096,7 +1105,7 @@ def main():
                     with col:
                         st.markdown(f"**{category}**")
                         for s in stocks:
-                            if st.button(s, key=f"sug_{category}_{s}", use_container_width=True):
+                            if st.button(s, key=f"sug_{category}_{s}", width="stretch"):
                                 st.session_state.selected_stock = s
                                 st.session_state.analyze_stock = s
                                 st.session_state.show_suggestions = False
@@ -1209,7 +1218,7 @@ def main():
                     st.write(summary)
             col1, col2 = st.columns(2)
             with col1:
-                st.plotly_chart(create_score_radar(signal.dimension_scores), use_container_width=True)
+                st.plotly_chart(create_score_radar(signal.dimension_scores), width="stretch")
             with col2:
                 render_dimension_scores(signal.dimension_scores)
             
@@ -1268,7 +1277,7 @@ def main():
                 if rows:
                     st.dataframe(
                         pd.DataFrame(rows),
-                        use_container_width=True,
+                        width="stretch",
                         hide_index=True,
                     )
 
@@ -1403,6 +1412,7 @@ def main():
             else:
                 # Check ML status to give specific guidance
                 ml_status = app.get_ml_status()
+                ml_skip_reason = results.get("ml_skip_reason")
                 
                 if not ml_status.get('enabled'):
                     st.warning("**ML is disabled in configuration.**")
@@ -1415,6 +1425,8 @@ def main():
                 else:
                     # ML is initialized but prediction failed
                     st.warning("**ML analysis ran but didn't produce results.**")
+                    if ml_skip_reason:
+                        st.info(ml_skip_reason)
                     
                     # Show which layers are ready
                     st.markdown("**Layer Status:**")
@@ -1438,7 +1450,7 @@ def main():
                         For now, forecaster and explainer results are still available.
                         """)
                     
-                    if st.button("🔄 Re-run ML Analysis", use_container_width=True):
+                    if st.button("🔄 Re-run ML Analysis", width="stretch"):
                         symbol = st.session_state.get('symbol')
                         current_profile = st.session_state.get('profile')
                         if symbol and current_profile:
@@ -1487,9 +1499,9 @@ def main():
         
         with tab5:
             st.subheader("Price History")
-            st.plotly_chart(create_price_chart(data['price_history'], f"{symbol} Price"), use_container_width=True)
+            st.plotly_chart(create_price_chart(data['price_history'], f"{symbol} Price"), width="stretch")
             st.subheader("Drawdown History")
-            st.plotly_chart(create_drawdown_chart(data['price_history']), use_container_width=True)
+            st.plotly_chart(create_drawdown_chart(data['price_history']), width="stretch")
 
             st.markdown("---")
             st.subheader("Index History")
@@ -1503,7 +1515,7 @@ def main():
                 else:
                     st.plotly_chart(
                         create_price_chart(index_history, f"{index_symbol} Index", show_volume=False),
-                        use_container_width=True
+                        width="stretch"
                     )
             else:
                 st.info("No index datasets detected. Run `python 2-download_all_stocks.py --build-db-only`.")
