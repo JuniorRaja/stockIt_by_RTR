@@ -759,13 +759,19 @@ class DataSourceManager:
                 for suffix in ['.NS', '.BO']:
                     try:
                         ticker = yf.Ticker(f"{symbol}{suffix}")
-                        return {
-                            'income_statement': ticker.financials.T if ticker.financials is not None else pd.DataFrame(),
-                            'balance_sheet': ticker.balance_sheet.T if ticker.balance_sheet is not None else pd.DataFrame(),
-                            'cash_flow': ticker.cashflow.T if ticker.cashflow is not None else pd.DataFrame(),
-                            'dividends': ticker.dividends if ticker.dividends is not None else pd.Series(dtype=float),
+                        income_stmt = ticker.financials.T if ticker.financials is not None else pd.DataFrame()
+                        balance_sheet = ticker.balance_sheet.T if ticker.balance_sheet is not None else pd.DataFrame()
+                        cash_flow = ticker.cashflow.T if ticker.cashflow is not None else pd.DataFrame()
+                        dividends = ticker.dividends if ticker.dividends is not None else pd.Series(dtype=float)
+                        result = {
+                            'income_statement': income_stmt,
+                            'balance_sheet': balance_sheet,
+                            'cash_flow': cash_flow,
+                            'dividends': dividends,
                             'source': f'yahoo_finance{suffix}'
                         }
+                        self._cache_financials(symbol, result)
+                        return result
                     except:
                         continue
             except:
@@ -775,8 +781,55 @@ class DataSourceManager:
             'income_statement': pd.DataFrame(),
             'balance_sheet': pd.DataFrame(),
             'cash_flow': pd.DataFrame(),
+            'dividends': pd.Series(dtype=float),
             'source': 'none'
         }
+
+    def _cache_financials(self, symbol: str, financials: Dict[str, Any]) -> None:
+        """Persist live financials to offline cache."""
+        try:
+            FINANCIALS_DIR.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "symbol": symbol,
+                "downloaded_at": datetime.now().isoformat(),
+                "income_statement": self._df_to_payload(financials.get("income_statement")),
+                "balance_sheet": self._df_to_payload(financials.get("balance_sheet")),
+                "cash_flow": self._df_to_payload(financials.get("cash_flow")),
+                "dividends": self._series_to_payload(financials.get("dividends")),
+                "source": financials.get("source", "yahoo_finance"),
+            }
+            fin_file = FINANCIALS_DIR / f"{symbol}.json"
+            with open(fin_file, "w") as f:
+                json.dump(payload, f, indent=2)
+        except Exception as e:
+            logger.debug(f"Failed to cache financials for {symbol}: {e}")
+
+    @staticmethod
+    def _df_to_payload(df: Optional[pd.DataFrame]) -> Optional[Dict[str, Any]]:
+        if df is None or df.empty:
+            return None
+        try:
+            df = df.copy()
+            df.index = df.index.astype(str)
+            df.columns = [str(c) for c in df.columns]
+            return df.to_dict(orient="split")
+        except Exception:
+            return None
+
+    @staticmethod
+    def _series_to_payload(series: Optional[pd.Series]) -> Optional[Dict[str, Any]]:
+        if series is None or series.empty:
+            return None
+        try:
+            series = series.dropna()
+            if series.empty:
+                return None
+            return {
+                "index": [str(i) for i in series.index],
+                "values": [float(v) for v in series.values],
+            }
+        except Exception:
+            return None
     
     def get_all_stocks(self, force_refresh: bool = False) -> pd.DataFrame:
         """Get complete list of stocks."""
