@@ -30,6 +30,7 @@ from src.engine.ml_context import MLContextAnalyzer
 from src.analysis.signal_generator import SignalGenerator, UserProfile, Signal
 from src.analysis.explainability import ExplainabilityEngine
 from src.analysis.red_flags import RedFlagDetector
+from src.analysis.buffett import BuffettAnalyzer
 from src.features.time_travel import TimeTravelEngine
 from src.features.scenario_simulator import ScenarioSimulator
 from src.ui.components import render_user_profile, render_signal_badge, render_why_not_buy, render_red_flags, render_dimension_scores, render_footer
@@ -502,6 +503,7 @@ class IndianEquityIntelligence:
         self.signal_gen = SignalGenerator()
         self.explainer = ExplainabilityEngine()
         self.red_flag = RedFlagDetector()
+        self.buffett = BuffettAnalyzer()
         self.time_travel = TimeTravelEngine()
         self.scenario_sim = ScenarioSimulator()
         self.macro_provider = get_macro_provider()
@@ -514,7 +516,8 @@ class IndianEquityIntelligence:
     @property
     def data_manager(self):
         if self._data_manager is None:
-            self._data_manager = DataSourceManager()
+            offline_mode = bool(self.config.get("app", {}).get("offline_mode", True))
+            self._data_manager = DataSourceManager(offline_mode=offline_mode)
         return self._data_manager
     
     @property
@@ -612,6 +615,7 @@ class IndianEquityIntelligence:
             val = self.valuation.analyze(symbol, info, prices, fins, earnings_growth=fin.pat_cagr_5y)
             mkt = self.market.analyze(symbol, prices, nifty)
             red_flags = self.red_flag.detect_all_flags(symbol, info, share, fins)
+            buffett = self.buffett.analyze(info, fins)
             
             # Generate initial signal from rule-based system
             signal = self.signal_gen.generate_signal(
@@ -698,6 +702,7 @@ class IndianEquityIntelligence:
                 'valuation': val, 
                 'market': mkt, 
                 'red_flags': red_flags,
+                'buffett': buffett,
                 'ml_prediction': ml_prediction,  # NEW: ML results
             }
         if show_spinner:
@@ -735,7 +740,23 @@ def main():
             st.session_state.ml_init_attempted = True
     
     with st.sidebar:
-        st.title("📊 Stocron by RTR")
+        st.markdown(
+            """
+            <style>
+              @import url('https://fonts.googleapis.com/css2?family=Bungee+Shade&family=Lexend+Peta:wght@300;400;500;600&display=swap');
+            </style>
+            <div style="line-height: 1.1;">
+              <div style="font-family: 'Bungee Shade', cursive; font-size: 30px; font-weight: 400;">
+                📊 Stocron
+              </div>
+              <div style="font-family: 'Lexend Peta', sans-serif; font-size: 12px; color: #6c757d;">
+                &nbsp;by&nbsp;&nbsp;&nbsp;<a href="https://www.youtube.com/@RTR-Unfiltered" target="_blank" rel="noopener noreferrer">RTR Unfiltered</a>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown("")
         st.caption("Local-first • Explainable")
         st.markdown("---")
         profile_dict = render_user_profile()
@@ -1071,19 +1092,22 @@ def main():
         with col2:
             render_signal_badge(signal.signal, signal.composite_score)
         
-        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📊 Overview", "🤖 ML Insights", "⚠️ Why NOT", "📈 Charts", "⏰ Time Travel", "🎯 Scenarios"])
+        tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
+            ["📊 Overview", "🧾 Buffett's Analysis", "🤖 ML Insights", "⚠️ Why NOT", "📈 Charts", "⏰ Time Travel", "🎯 Scenarios"]
+        )
         
         with tab1:
             st.markdown(f"### {data['stock_info'].get('name', symbol)}")
             st.markdown(f"*{results['explain'].summary}*")
             info = data.get('stock_info', {})
             st.subheader("Company Profile")
-            col_info1, col_info2, col_info3, col_info4, col_info5 = st.columns(5)
+            col_info1, col_info2, col_info3, col_info4, col_info5, col_info6 = st.columns(6)
             profile_obj = st.session_state.get("profile")
             holding_years = int(getattr(profile_obj, "holding_tenure", 5) or 5)
             pre_cagr = app.data_manager.get_stock_cagr(symbol, holding_years)
             if pre_cagr is None:
                 pre_cagr = _calculate_price_cagr(data.get("price_history"), holding_years)
+            buffett_result = results.get("buffett")
             with col_info1:
                 st.metric(
                     "Current Price",
@@ -1100,6 +1124,16 @@ def main():
                     f"CAGR ({holding_years}Y)",
                     format_percentage(pre_cagr) if pre_cagr is not None else "N/A"
                 )
+            with col_info6:
+                if buffett_result:
+                    delta = "Buffett Approved" if buffett_result.approved else "Not Approved"
+                    st.metric(
+                        "Buffett Score",
+                        f"{buffett_result.score}/{buffett_result.total_points}",
+                        delta,
+                    )
+                else:
+                    st.metric("Buffett Score", "N/A")
 
             summary = info.get('business_summary')
             if summary:
@@ -1133,6 +1167,49 @@ def main():
                 render_red_flags([{'severity': r.severity, 'description': r.description} for r in results['red_flags']])
         
         with tab2:
+            buffett_result = results.get("buffett")
+            st.markdown("### 🧾 Buffett's Checklist Analysis")
+            if not buffett_result:
+                st.info("No Buffett analysis available for this stock.")
+            else:
+                col_a, col_b, col_c = st.columns(3)
+                with col_a:
+                    st.metric(
+                        "Buffett Score",
+                        f"{buffett_result.score}/{buffett_result.total_points}",
+                    )
+                with col_b:
+                    st.metric(
+                        "Status",
+                        "Buffett Approved" if buffett_result.approved else "Not Yet",
+                    )
+                with col_c:
+                    st.metric("Data Coverage", f"{buffett_result.coverage:.0f}%")
+
+                st.markdown("---")
+                rows = []
+                for rule in buffett_result.rules:
+                    rows.append({
+                        "Category": rule.category,
+                        "Rule": rule.name,
+                        "Status": rule.status,
+                        "Value": rule.value_display,
+                        "Target": rule.threshold,
+                        "Notes": rule.notes,
+                    })
+                if rows:
+                    st.dataframe(
+                        pd.DataFrame(rows),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+                st.caption(
+                    "Scoring uses 10 rules (5 hard, 4 trend, 1 moat composite). "
+                    "Moat proxies are shown for transparency."
+                )
+
+        with tab3:
             # ML Insights Tab - NEW
             st.markdown("### 🤖 ML-Enhanced Analysis")
             if not st.session_state.get('enable_ml', False):
@@ -1327,7 +1404,7 @@ def main():
                     See ML_MODELS.md for complete instructions.
                     """)
         
-        with tab3:
+        with tab4:
             #st.markdown("### This section is shown for ALL stocks, even BUY signals")
             #st.markdown("---")
             render_why_not_buy(results['explain'].why_not_buy)
@@ -1340,7 +1417,7 @@ def main():
             for i in results['explain'].thesis_invalidators:
                 st.info(f"📌 {i}")
         
-        with tab4:
+        with tab5:
             st.subheader("Price History")
             st.plotly_chart(create_price_chart(data['price_history'], f"{symbol} Price"), use_container_width=True)
             st.subheader("Drawdown History")
@@ -1363,7 +1440,7 @@ def main():
             else:
                 st.info("No index datasets detected. Run `python 2-download_all_stocks.py --build-db-only`.")
         
-        with tab5:
+        with tab6:
             st.subheader("⏰ Time Travel Mode")
             st.info("Re-analyze using only data available at a historical point. No future leakage.")
             cutoffs = app.time_travel.get_available_cutoffs(data['price_history'])
@@ -1450,7 +1527,7 @@ def main():
             else:
                 st.warning("Not enough historical data for time travel.")
         
-        with tab6:
+        with tab7:
             st.subheader("🎯 Scenario Simulator")
             st.info("Stress-test your investment thesis under various market conditions")
             
