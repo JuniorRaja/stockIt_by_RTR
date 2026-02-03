@@ -469,14 +469,21 @@ class CatBoostClassifier(SignalClassifier):
             self._status = ModelStatus.LOADING
             
             with open(model_path, 'rb') as f:
-                self._model = pickle.load(f)
+                loaded = pickle.load(f)
             
-            # Load metadata
-            metadata_path = self.config.model_path / "metadata.json"
-            if metadata_path.exists():
-                with open(metadata_path, 'r') as f:
-                    metadata = json.load(f)
-                    self._feature_names = metadata.get("feature_names", [])
+            # Handle both formats: dict (from train_classifier.py) or model directly
+            if isinstance(loaded, dict):
+                self._model = loaded.get('model')
+                self._feature_names = loaded.get('feature_names', [])
+                self._logger.info(f"Loaded classifier from training script (type: {loaded.get('model_type', 'unknown')})")
+            else:
+                self._model = loaded
+                # Load metadata from separate file
+                metadata_path = self.config.model_path / "metadata.json"
+                if metadata_path.exists():
+                    with open(metadata_path, 'r') as f:
+                        metadata = json.load(f)
+                        self._feature_names = metadata.get("feature_names", [])
             
             self._status = ModelStatus.READY
             self._logger.info("CatBoost model loaded successfully")
