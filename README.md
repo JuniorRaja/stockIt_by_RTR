@@ -6,6 +6,7 @@
 [![Docker](https://img.shields.io/badge/Docker-Enabled-blue?logo=docker&logoColor=white)](https://www.docker.com/)
 [![Streamlit](https://img.shields.io/badge/Frontend-Streamlit-red?style=for-the-badge&logo=streamlit)](https://streamlit.io/)
 [![Model](https://img.shields.io/badge/AI-Chronos--T5%20%2B%20LightGBM-orange?style=for-the-badge)](https://huggingface.co/amazon/chronos-t5-tiny)
+[![YouTube](https://img.shields.io/badge/YouTube-RTR%20Unfiltered-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://www.youtube.com/@RTR-Unfiltered)
 [![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 
 ---
@@ -108,18 +109,18 @@ docker-compose exec stocron-by-rtr python 2-download_all_stocks.py --with-financ
 # If you don't want Warren Buffet's scoring, just download stock info without financials
 docker-compose exec stocron-by-rtr python 2-download_all_stocks.py
 
-# 5) Delisted stocks (recommended for survivorship bias)
+# 4) Delisted stocks (recommended for survivorship bias)
 docker-compose exec stocron-by-rtr python scripts/download_delisted_stocks.py --export
 docker-compose exec stocron-by-rtr python scripts/download_delisted_stocks.py --download --years 30
 docker-compose exec stocron-by-rtr python 2-download_all_stocks.py --build-db-only
 
-# 6) (Optional) Enable real crude oil data
+# 5) (Optional) Enable real crude oil data
 export FRED_API_KEY="your_fred_api_key"
 
-# 7) Download ML models (optional; required for ML forecaster/explainer)
+# 6) Download ML models (optional; required for ML forecaster/explainer)
 docker-compose exec stocron-by-rtr python 3-download_models.py
 
-# 8) Train classifier (required for ML signals)
+# 7) Train classifier (required for ML signals)
 docker-compose exec stocron-by-rtr python 4-train_classifier.py
 
 Open👉 http://localhost:8501
@@ -135,6 +136,43 @@ We believe in "Unfiltered" truth. The AI shouldn't be a black box.
 SHAP Integration: We use SHAP (SHapley Additive exPlanations) to break down every signal.
 
 Example Output: "The model is Bullish because 'ROE > 15%' (+20 impact) and 'Oil Prices Dropped' (+10 impact), despite 'RSI being Overbought' (-5 impact)."
+
+---
+
+## FAQs and General Information
+
+### 1. How to refresh all stocks to latest metrics?
+Use the same command again, but add --download-all so it refreshes every symbol (not just missing ones). Example:
+```bash
+docker-compose exec stocron-by-rtr python 2-download_all_stocks.py --with-financials --download-all
+```
+Notes:
+- Without --download-all, it only downloads missing symbols.
+- If you want to refresh a subset, use --refresh-symbol with comma-separated tickers.
+
+### 2. RTR's recommended ML list
+I use *chronos-t5-base* for forecaster, *CatBoost* for classifier with **NO LLM** for Explainer.
+This is a weekend project and I haven't designed the tool for GPU acceleration. So LLM will run on CPU which would be a lot slower (10 to 15mins per stock). If you still want, go for it.
+
+### 3. How accurate are the predictions? What's the backtest performance?
+Stocron is a research tool, not a promise of returns. It focuses on long-horizon regime awareness and survivorship-aware testing rather than headline accuracy. Performance varies by period, sector, and macro regime. Use the time-travel engine to validate your own strategy across decades, including bad regimes and delisted stocks.
+
+### 4. How is this different from normal technical indicators?
+It's not just RSI/MA. Stocron blends a transformer forecaster, a fundamentals/macro-aware classifier, and explainability (SHAP + LLM) to evaluate regime, fundamentals, and macro context-not just price patterns.
+
+### 5. Can I simulate macro events like oil shocks or rate hikes?
+Yes. The scenario simulator lets you stress portfolios against macro shocks like crude spikes or rate jumps to see how signals and risk profiles change.
+
+### 6. Does it give buy/sell signals or just research insights?
+It generates a binary BUY/HOLD signal from the classifier plus explanations, but it’s designed as a research engine. The goal is decision support, not automated trading.
+
+### 7. Can I use my own data sources or models?
+The system is modular and data-lake driven (JSON/CSV). Advanced users can extend data sources or swap models, but *it's not a plug-and-play feature yet.*
+
+### 8. Is this financial advice or just research?
+**Research only.** It’s educational and analytical, not financial advice. Always use your own judgment and risk management.
+
+---
 
 ## Disclaimer 📜
 This tool is for **educational and research purposes only**. It is built for the RTR Unfiltered community to analyze market logic. It is NOT financial advice. Markets are subject to risk. *Use your own brain before making financial decisions*.

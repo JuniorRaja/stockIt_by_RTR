@@ -740,7 +740,23 @@ def main():
             st.session_state.ml_init_attempted = True
     
     with st.sidebar:
-        st.title("📊 Stocron by RTR")
+        st.markdown(
+            """
+            <style>
+              @import url('https://fonts.googleapis.com/css2?family=Bungee+Shade&family=Lexend+Peta:wght@300;400;500;600&display=swap');
+            </style>
+            <div style="line-height: 1.1;">
+              <div style="font-family: 'Bungee Shade', cursive; font-size: 30px; font-weight: 400;">
+                📊 Stocron
+              </div>
+              <div style="font-family: 'Lexend Peta', sans-serif; font-size: 12px; color: #6c757d;">
+                &nbsp;by&nbsp;&nbsp;&nbsp;<a href="https://www.youtube.com/@RTR-Unfiltered" target="_blank" rel="noopener noreferrer">RTR Unfiltered</a>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown("")
         st.caption("Local-first • Explainable")
         st.markdown("---")
         profile_dict = render_user_profile()
