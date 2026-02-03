@@ -44,6 +44,8 @@ logger = logging.getLogger(__name__)
 
 st.set_page_config(page_title="Stocron by RTR", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
 
+SEBI_DISCLAIMER_PATH = Path(".streamlit/sebi_disclaimer.json")
+
 st.markdown("""
 <style>
     .main { padding: 0 1rem; }
@@ -90,6 +92,26 @@ def _load_stock_info_index() -> pd.DataFrame:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
     return df
+
+
+def _get_sebi_disclaimer_state() -> str:
+    """Return the last acknowledged date (YYYY-MM-DD) or empty string."""
+    try:
+        if SEBI_DISCLAIMER_PATH.exists():
+            payload = json.loads(SEBI_DISCLAIMER_PATH.read_text())
+            return payload.get("ack_date", "")
+    except Exception:
+        return ""
+    return ""
+
+
+def _set_sebi_disclaimer_state(ack_date: str) -> None:
+    """Persist acknowledgment date (YYYY-MM-DD) to disk."""
+    try:
+        SEBI_DISCLAIMER_PATH.parent.mkdir(parents=True, exist_ok=True)
+        SEBI_DISCLAIMER_PATH.write_text(json.dumps({"ack_date": ack_date}))
+    except Exception:
+        return
 
 
 def _calculate_price_cagr(prices: pd.DataFrame, years: int) -> float:
@@ -396,8 +418,26 @@ def _render_howto_modal():
         _body()
 
 
+def _render_sebi_disclaimer_modal():
+    def _body():
+        st.markdown(
+            """
+            ### SEBI Risk Disclosure
+            - **Investments in securities market are subject to market risks.**
+            - **Read all the related documents carefully before investing.**
+            - Past performance is not indicative of future results.
+
+            ### Important Notice
+            This app provides decision support and educational insights only. It is **not** investment advice or a recommendation to buy or sell any security.
+            """
+        )
+
+    return _render_dialog("Important Disclaimer", _body)
+
+
 def _render_all_stocks_modal(app):
     def _body():
+        st.session_state.all_stocks_rendered = True
         col_title, col_close = st.columns([5, 1])
         st.markdown("### Sectors")
         stock_info_df = _load_stock_info_index()
@@ -717,6 +757,11 @@ def main():
         st.session_state.ml_init_attempted = False
     if 'enable_ml' not in st.session_state:
         st.session_state.enable_ml = False
+    if 'sebi_disclaimer_shown' not in st.session_state:
+        today = datetime.now().date().isoformat()
+        last_ack = _get_sebi_disclaimer_state()
+        st.session_state.sebi_disclaimer_shown = (last_ack == today)
+        st.session_state.sebi_disclaimer_ack_date = last_ack
     app = st.session_state.app
     
     # Auto-initialize ML models on first load if configured
@@ -739,6 +784,20 @@ def main():
         if attempted:
             st.session_state.ml_init_attempted = True
     
+    should_show_disclaimer = not st.session_state.sebi_disclaimer_shown
+    if should_show_disclaimer:
+        today = datetime.now().date().isoformat()
+        st.session_state.sebi_disclaimer_shown = True
+        st.session_state.sebi_disclaimer_ack_date = today
+        _set_sebi_disclaimer_state(today)
+
+        shown = _render_sebi_disclaimer_modal()
+        if not shown:
+            st.warning(
+                "SEBI Risk Disclosure: Investments in securities market are subject to market risks. "
+                "Read all the related documents carefully before investing."
+            )
+
     with st.sidebar:
         st.markdown(
             """
@@ -840,22 +899,31 @@ def main():
         with col_wiki:
             if st.button("Wiki", use_container_width=True):
                 st.session_state.show_wiki = True
+                st.session_state.show_howto = False
+                st.session_state.show_all_stocks = False
         with col_howto:
             if st.button("How-to?", use_container_width=True):
                 st.session_state.show_howto = True
+                st.session_state.show_wiki = False
+                st.session_state.show_all_stocks = False
         if st.button("View all Stocks", use_container_width=True):
             st.session_state.show_all_stocks = True
+            st.session_state.show_wiki = False
+            st.session_state.show_howto = False
 
         render_footer()
 
     if st.session_state.get("show_wiki"):
         _render_wiki_modal()
         st.session_state.show_wiki = False
-    if st.session_state.get("show_howto"):
+    elif st.session_state.get("show_howto"):
         _render_howto_modal()
         st.session_state.show_howto = False
-    if st.session_state.get("show_all_stocks"):
+    elif st.session_state.get("show_all_stocks"):
+        st.session_state.all_stocks_rendered = False
         _render_all_stocks_modal(app)
+        if not st.session_state.all_stocks_rendered:
+            st.session_state.show_all_stocks = False
     
     st.title("Stock Analysis")
     
