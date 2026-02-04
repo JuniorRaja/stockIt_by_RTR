@@ -1,11 +1,9 @@
 # Stocron by RTR | The Ultimate Market Intelligence Engine
-
 > **30+ Years of History. Zero Noise. Pure Alpha.**
 
-
-[![Docker](https://img.shields.io/badge/Docker-Enabled-blue?logo=docker&logoColor=white)](https://www.docker.com/)
+[![Docker](https://img.shields.io/badge/Docker-Enabled-blue?logo=docker&logoColor=white&style=for-the-badge)](https://www.docker.com/)
 [![Streamlit](https://img.shields.io/badge/Frontend-Streamlit-red?style=for-the-badge&logo=streamlit)](https://streamlit.io/)
-[![Model](https://img.shields.io/badge/AI-Chronos--T5%20%2B%20LightGBM-orange?style=for-the-badge)](https://huggingface.co/amazon/chronos-t5-tiny)
+[![Model](https://img.shields.io/badge/AI-Chronos--T5%20%2B%20LightGBM-orange?style=for-the-badge)](https://huggingface.co/amazon/chronos-t5-base)
 [![YouTube](https://img.shields.io/badge/YouTube-RTR%20Unfiltered-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://www.youtube.com/@RTR-Unfiltered)
 [![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 
@@ -54,7 +52,7 @@ The tool doesn't just chase profits; it filters out fraud.
 
 ---
 
-## Architecture 🏗️
+## 🏗️ Architecture
 
 The system is containerized for stability and reproducibility.
 
@@ -89,7 +87,7 @@ The system is containerized for stability and reproducibility.
 
 ---
 
-## Installation & Usage (Docker🐳)
+## Installation & Usage
 > We strongly recommend running Stocron via Docker to avoid dependency hell.
 
 ### Prerequisites
@@ -130,7 +128,7 @@ auto-updated settings persist on the host.
 ```
 ---
 
-## ML Logic & Explainability 🧩
+## 🧩 ML Logic & Explainability
 We believe in "Unfiltered" truth. The AI shouldn't be a black box.
 
 SHAP Integration: We use SHAP (SHapley Additive exPlanations) to break down every signal.
@@ -174,7 +172,7 @@ The system is modular and data-lake driven (JSON/CSV). Advanced users can extend
 
 ---
 
-## Disclaimer 📜
+## 📜 Disclaimer
 This tool is for **educational and research purposes only**. It is built for the RTR Unfiltered community to analyze market logic. It is NOT financial advice. Markets are subject to risk. *Use your own brain before making financial decisions*.
 
 ## License
