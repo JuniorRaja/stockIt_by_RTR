@@ -26,10 +26,17 @@ env/
 # Data files (generated locally)
 data/cache/
 data/db/
-data/stock_info/
+data/delisted/
+data/financials/
+data/macro/
 data/prices/
+data/stock_info/
+data/stock_lists/
 *.parquet
 *.db
+data/delisted_list.csv
+data/missing_live_symbols.json
+data/download_progress.json
 
 # Models
 models/classifier/
