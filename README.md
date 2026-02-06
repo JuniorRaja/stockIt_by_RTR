@@ -35,23 +35,27 @@ We don't rely on a single model. Stocron uses a hybrid architecture:
 * **The Forecaster (Chronos-T5):** A Transformer-based model (pretrained by Amazon) that treats stock charts like a language to predict future price sequences.
 * **The Classifier (LightGBM):** A gradient-boosting decision engine that analyzes hundreds of features (Financials, Macro, Technicals) to generate a binary `BUY`/`HOLD` signal.
 * **The Explainer (Qwen2.5):** A local LLM that generates human-readable explanations for AI decisions.
+<img width="720" height="480" alt="capture_260206_211651" src="https://github.com/user-attachments/assets/2c5e38f4-d9c6-459a-9e61-4343c440b0b4" />
 
 ### 2. Time Travel & Survivorship ⏳
 Most backtests are fake because they test on companies that exist *today*.
 * **Delisted Database:** We track companies that failed, ensuring your strategy survives the worst.
 * **Time Travel Engine:** Go back to Jan 1st, 2008. The system "forgets" the future, forcing the AI to trade only on what it knew then.
+<img width="720" height="480" alt="capture_260206_211525" src="https://github.com/user-attachments/assets/a18bbf4c-af11-43ce-bd9e-5bf584fec8d4" />
 
 ### 3. Scenario Simulator 🌪️
 Don't just predict; prepare.
 * *What if Crude Oil hits $120?*
 * *What if the Repo Rate jumps to 8%?*
 The simulator stresses your portfolio against hypothetical macro-economic shocks.
+<img width="720" height="480" alt="capture_260206_211600" src="https://github.com/user-attachments/assets/da1589dd-46a6-4854-89ae-cfebdbd4a411" />
 
 ### 4. Governance Guard 🕵️
 The tool doesn't just chase profits; it filters out fraud.
 * **Beneish M-Score:** Detects earnings manipulation.
 * **Altman Z-Score:** Predicts bankruptcy risk.
 * **Piotroski F-Score:** Measures fundamental strength.
+<img width="720" height="480" alt="capture_260206_211845" src="https://github.com/user-attachments/assets/818436c3-3ada-441b-9ea8-83f98ac9a862" />
 
 ---
 
@@ -137,6 +141,7 @@ We believe in "Unfiltered" truth. The AI shouldn't be a black box.
 SHAP Integration: We use SHAP (SHapley Additive exPlanations) to break down every signal.
 
 Example Output: "The model is Bullish because 'ROE > 15%' (+20 impact) and 'Oil Prices Dropped' (+10 impact), despite 'RSI being Overbought' (-5 impact)."
+<img width="720" height="480" alt="capture_260206_211651" src="https://github.com/user-attachments/assets/3d0ab635-8f04-48d5-a9d1-8916a33c28e4" />
 
 ---
 
