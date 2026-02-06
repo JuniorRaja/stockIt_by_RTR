@@ -1,8 +1,0 @@
-symbol,delisting_date,reason,last_known_price,peak_price,loss_from_peak
-DHFL,2020-11-01,fraud_bankruptcy,15.0,690,97.82608695652173
-JAYPEEINFRA,2021-01-01,bankruptcy,0.95,100,99.05000000000001
-RCOM,2022-12-12,bankruptcy,1.85,800,99.76875
-RELCAPITAL,2021-12-01,bankruptcy,8.5,950,99.10526315789474
-SATYAM,2009-04-01,fraud,50.0,550,90.9090909090909
-UNITECH,2020-04-01,fraud_investigation,3.5,520,99.32692307692308
-VIDEOCON,2021-08-01,bankruptcy,5.0,400,98.75
