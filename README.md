@@ -17,6 +17,9 @@ Retail investors are playing a rigged game. Most analysis tools suffer from thre
 
 You cannot build generational wealth by just "looking at the chart." You need to understand the **Regime**, the **Fundamentals**, and the **Macro-Economic** backdrop.
 
+[<img src="https://img.youtube.com/vi/zA_az-prPns/hqdefault.jpg" target="_blank" width="720" height="480"
+/>](https://www.youtube.com/embed/zA_az-prPns)
+
 ## 🛡️ Why This Tool Exists
 **Stocron** was built for the **RTR Unfiltered** ecosystem to answer one question:
 *"If I had the same data, tools, and computing power as a hedge fund, but with 30 years of unfiltered Indian market context, how would I trade?"*
